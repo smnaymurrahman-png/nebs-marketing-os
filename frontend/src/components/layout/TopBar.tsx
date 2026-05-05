@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Search, X, CheckCheck } from 'lucide-react'
+import { Bell, X, CheckCheck, Menu } from 'lucide-react'
 import { useAuthStore } from '@/lib/store'
 import { timeAgo } from '@/lib/utils'
 import api from '@/lib/api'
@@ -15,7 +15,11 @@ interface Notification {
   created_at: string
 }
 
-export default function TopBar() {
+interface TopBarProps {
+  onMenuClick: () => void
+}
+
+export default function TopBar({ onMenuClick }: TopBarProps) {
   const { user } = useAuthStore()
   const [showNotifs, setShowNotifs] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -24,7 +28,6 @@ export default function TopBar() {
 
   useEffect(() => {
     fetchNotifications()
-    // Poll every 30 seconds
     const interval = setInterval(fetchNotifications, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -59,32 +62,41 @@ export default function TopBar() {
     task: '✅', meeting: '📅', idea: '💡', report: '📊', system: '🔔'
   }
 
-  // Get greeting
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   return (
-    <header className="bg-white border-b border-slate-100 px-6 py-3.5 flex items-center justify-between shrink-0">
-      <div>
-        <p className="text-slate-400 text-xs">{greeting},</p>
-        <p className="text-slate-900 font-semibold text-sm">{user?.full_name}</p>
+    <header className="bg-white border-b border-slate-100 px-4 md:px-6 py-3 flex items-center justify-between shrink-0">
+      <div className="flex items-center gap-3">
+        {/* Hamburger — mobile only */}
+        <button
+          onClick={onMenuClick}
+          className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors text-slate-600"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        <div>
+          <p className="text-slate-400 text-xs hidden sm:block">{greeting},</p>
+          <p className="text-slate-900 font-semibold text-sm">{user?.full_name}</p>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 md:gap-3">
         {/* Notification Bell */}
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowNotifs(!showNotifs)}
             className="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
           >
-            <Bell className="w-4.5 h-4.5 text-slate-600" />
+            <Bell className="w-4 h-4 text-slate-600" />
             {unread > 0 && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
             )}
           </button>
 
           {showNotifs && (
-            <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-modal border border-slate-100 z-50 animate-slide-up">
+            <div className="absolute right-0 top-12 w-[calc(100vw-2rem)] max-w-sm bg-white rounded-xl shadow-modal border border-slate-100 z-50 animate-slide-up">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
@@ -104,7 +116,7 @@ export default function TopBar() {
                 </div>
               </div>
 
-              <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
+              <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
                 {notifications.length === 0 ? (
                   <div className="px-4 py-8 text-center">
                     <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
@@ -136,7 +148,7 @@ export default function TopBar() {
         </div>
 
         {/* Role Badge */}
-        <div className="px-2.5 py-1 bg-brand-50 rounded-lg">
+        <div className="hidden sm:block px-2.5 py-1 bg-brand-50 rounded-lg">
           <span className="text-brand-700 text-xs font-semibold capitalize">
             {user?.access_level?.replace('_', ' ')}
           </span>

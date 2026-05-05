@@ -67,14 +67,14 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Here's what's happening in your team today.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Here's what's happening today.</p>
         </div>
         {isAdmin && (
-          <Link href="/dashboard/tasks/new" className="btn-primary">
-            <Plus className="w-4 h-4" /> New Task
+          <Link href="/dashboard/tasks/new" className="btn-primary shrink-0">
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
           </Link>
         )}
       </div>

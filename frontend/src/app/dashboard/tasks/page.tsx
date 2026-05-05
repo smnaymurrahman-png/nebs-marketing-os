@@ -55,8 +55,8 @@ export default function TasksPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-48">
+      <div className="space-y-2">
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
@@ -66,18 +66,20 @@ export default function TasksPage() {
             className="input pl-9"
           />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input w-auto">
-          <option value="">All Statuses</option>
-          {ALL_STATUSES.map(s => (
-            <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>
-          ))}
-        </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="input w-auto">
-          <option value="">All Priorities</option>
-          {Object.entries(PRIORITY_CONFIG).map(([k, v]) => (
-            <option key={k} value={k}>{v.label}</option>
-          ))}
-        </select>
+        <div className="flex gap-2">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input flex-1">
+            <option value="">All Statuses</option>
+            {ALL_STATUSES.map(s => (
+              <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>
+            ))}
+          </select>
+          <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="input flex-1">
+            <option value="">All Priorities</option>
+            {Object.entries(PRIORITY_CONFIG).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Status pills quick filter */}
@@ -121,7 +123,7 @@ export default function TasksPage() {
               <Link
                 key={task.id}
                 href={`/dashboard/tasks/${task.id}`}
-                className="card flex items-center gap-4 px-5 py-4 hover:shadow-card-hover transition-all group"
+                className="card flex items-center gap-3 px-4 py-3.5 hover:shadow-card-hover transition-all group"
               >
                 {/* Priority dot */}
                 <div className={cn('w-2 h-2 rounded-full shrink-0', priorityCfg.dot)} />
@@ -131,12 +133,9 @@ export default function TasksPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-slate-900 group-hover:text-brand-600 transition-colors">{task.title}</p>
                     <span className={cn('badge', statusCfg.bg, statusCfg.color)}>{statusCfg.label}</span>
-                    <span className={cn('badge', priorityCfg.bg, priorityCfg.color)}>{priorityCfg.label}</span>
+                    <span className={cn('badge hidden sm:inline-flex', priorityCfg.bg, priorityCfg.color)}>{priorityCfg.label}</span>
                   </div>
-                  {task.description && (
-                    <p className="text-xs text-slate-400 mt-0.5 truncate">{task.description}</p>
-                  )}
-                  <div className="flex items-center gap-4 mt-1.5">
+                  <div className="flex items-center gap-3 mt-1">
                     {task.deadline && (
                       <span className={cn('text-xs flex items-center gap-1', deadlineColor(task.deadline, task.status))}>
                         <Calendar className="w-3 h-3" />
@@ -145,14 +144,14 @@ export default function TasksPage() {
                     )}
                     {task.checklist_total > 0 && (
                       <span className="text-xs text-slate-400">
-                        {task.checklist_done}/{task.checklist_total} checklist
+                        {task.checklist_done}/{task.checklist_total}
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Assignees */}
-                <div className="flex -space-x-2 shrink-0">
+                {/* Assignees - hidden on very small screens */}
+                <div className="hidden sm:flex -space-x-2 shrink-0">
                   {task.assignees.slice(0, 3).map((a) => (
                     <div key={a.id} className="w-7 h-7 rounded-full bg-brand-100 border-2 border-white flex items-center justify-center text-xs font-bold text-brand-700" title={a.full_name}>
                       {getInitials(a.full_name)}
