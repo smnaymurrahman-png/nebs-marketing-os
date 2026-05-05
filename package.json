@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "Nebs Marketing OS - Monorepo",
   "scripts": {
+    "start": "node backend/src/index.js",
+    "build": "cd backend && npm install",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
