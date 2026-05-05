@@ -13,8 +13,21 @@ const uploadDir = process.env.UPLOAD_DIR || 'uploads';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Middleware
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://nebs-marketing-os.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.some(o => origin.startsWith(o))) {
+      callback(null, true);
+    } else {
+      callback(null, true); // permissive during initial setup
+    }
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
