@@ -16,12 +16,12 @@ const getAdsReports = async (req, res) => {
     const params = [];
 
     if (user.access_level === 'user') {
-      query += ' AND ar.submitted_by = ?';
+      query += ' AND ar.submitted_by = $1';
       params.push(user.id);
     }
 
     query += ' ORDER BY ar.created_at DESC';
-    const [rows] = await pool.execute(query, params);
+    const { rows } = await pool.query(query, params);
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -37,9 +37,9 @@ const createAdsReport = async (req, res) => {
     }
 
     const id = uuidv4();
-    await pool.execute(
+    await pool.query(
       `INSERT INTO ads_reports (id, campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, submitted_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [id, campaign_name, platform, date_from, date_to, total_spend || 0, cpa || 0, ctr || 0,
         clicks || 0, impressions || 0, rating, notes || null, req.user.id]
     );
@@ -54,7 +54,7 @@ const createAdsReport = async (req, res) => {
 // PUT /api/reports/ads/:id
 const updateAdsReport = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM ads_reports WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM ads_reports WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Report not found' });
 
     const r = rows[0];
@@ -63,8 +63,8 @@ const updateAdsReport = async (req, res) => {
     }
 
     const { campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, admin_comment } = req.body;
-    await pool.execute(
-      `UPDATE ads_reports SET campaign_name=?, platform=?, date_from=?, date_to=?, total_spend=?, cpa=?, ctr=?, clicks=?, impressions=?, rating=?, notes=?, admin_comment=?, updated_at=NOW() WHERE id=?`,
+    await pool.query(
+      `UPDATE ads_reports SET campaign_name=$1, platform=$2, date_from=$3, date_to=$4, total_spend=$5, cpa=$6, ctr=$7, clicks=$8, impressions=$9, rating=$10, notes=$11, admin_comment=$12, updated_at=NOW() WHERE id=$13`,
       [campaign_name ?? r.campaign_name, platform ?? r.platform, date_from ?? r.date_from,
         date_to ?? r.date_to, total_spend ?? r.total_spend, cpa ?? r.cpa, ctr ?? r.ctr,
         clicks ?? r.clicks, impressions ?? r.impressions, rating ?? r.rating, notes ?? r.notes,
@@ -80,12 +80,12 @@ const updateAdsReport = async (req, res) => {
 // DELETE /api/reports/ads/:id
 const deleteAdsReport = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT submitted_by FROM ads_reports WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT submitted_by FROM ads_reports WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Not found' });
     if (rows[0].submitted_by !== req.user.id && req.user.access_level === 'user') {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
-    await pool.execute('DELETE FROM ads_reports WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM ads_reports WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Report deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -107,12 +107,12 @@ const getContentReports = async (req, res) => {
     const params = [];
 
     if (user.access_level === 'user') {
-      query += ' AND cr.submitted_by = ?';
+      query += ' AND cr.submitted_by = $1';
       params.push(user.id);
     }
 
     query += ' ORDER BY cr.created_at DESC';
-    const [rows] = await pool.execute(query, params);
+    const { rows } = await pool.query(query, params);
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -128,9 +128,9 @@ const createContentReport = async (req, res) => {
     }
 
     const id = uuidv4();
-    await pool.execute(
+    await pool.query(
       `INSERT INTO content_reports (id, content_name, platform, post_date, clicks, likes, comments, shares, impressions, rating, notes, submitted_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [id, content_name, platform, post_date, clicks || 0, likes || 0, comments || 0,
         shares || 0, impressions || 0, rating, notes || null, req.user.id]
     );
@@ -145,7 +145,7 @@ const createContentReport = async (req, res) => {
 // PUT /api/reports/content/:id
 const updateContentReport = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM content_reports WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM content_reports WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Report not found' });
 
     const r = rows[0];
@@ -154,8 +154,8 @@ const updateContentReport = async (req, res) => {
     }
 
     const { content_name, platform, post_date, clicks, likes, comments, shares, impressions, rating, notes, admin_comment } = req.body;
-    await pool.execute(
-      `UPDATE content_reports SET content_name=?, platform=?, post_date=?, clicks=?, likes=?, comments=?, shares=?, impressions=?, rating=?, notes=?, admin_comment=?, updated_at=NOW() WHERE id=?`,
+    await pool.query(
+      `UPDATE content_reports SET content_name=$1, platform=$2, post_date=$3, clicks=$4, likes=$5, comments=$6, shares=$7, impressions=$8, rating=$9, notes=$10, admin_comment=$11, updated_at=NOW() WHERE id=$12`,
       [content_name ?? r.content_name, platform ?? r.platform, post_date ?? r.post_date,
         clicks ?? r.clicks, likes ?? r.likes, comments ?? r.comments, shares ?? r.shares,
         impressions ?? r.impressions, rating ?? r.rating, notes ?? r.notes,
@@ -171,12 +171,12 @@ const updateContentReport = async (req, res) => {
 // DELETE /api/reports/content/:id
 const deleteContentReport = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT submitted_by FROM content_reports WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT submitted_by FROM content_reports WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Not found' });
     if (rows[0].submitted_by !== req.user.id && req.user.access_level === 'user') {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
-    await pool.execute('DELETE FROM content_reports WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM content_reports WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Report deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });

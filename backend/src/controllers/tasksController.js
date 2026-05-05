@@ -1,52 +1,56 @@
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
-const { createNotification, createBulkNotifications } = require('../utils/notifications');
+const { createNotification } = require('../utils/notifications');
 const { sendEmail, emailTemplates } = require('../utils/email');
 
 // GET /api/tasks
 const getTasks = async (req, res) => {
   try {
-    const { status, priority, assigned_to, search } = req.query;
+    const { status, priority, search } = req.query;
     const user = req.user;
+    let p = 0;
+    const params = [];
 
     let query = `
-      SELECT t.*, 
+      SELECT t.*,
         u.full_name as created_by_name, u.avatar_url as created_by_avatar,
-        (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) as comment_count,
-        (SELECT COUNT(*) FROM task_files tf WHERE tf.task_id = t.id) as file_count,
-        (SELECT COUNT(*) FROM task_checklist tck WHERE tck.task_id = t.id) as checklist_total,
-        (SELECT COUNT(*) FROM task_checklist tck WHERE tck.task_id = t.id AND tck.is_completed = TRUE) as checklist_done
+        (SELECT COUNT(*)::int FROM task_comments tc WHERE tc.task_id = t.id) as comment_count,
+        (SELECT COUNT(*)::int FROM task_files tf WHERE tf.task_id = t.id) as file_count,
+        (SELECT COUNT(*)::int FROM task_checklist tck WHERE tck.task_id = t.id) as checklist_total,
+        (SELECT COUNT(*)::int FROM task_checklist tck WHERE tck.task_id = t.id AND tck.is_completed = TRUE) as checklist_done
       FROM tasks t
       LEFT JOIN users u ON t.created_by = u.id
       WHERE 1=1
     `;
-    const params = [];
 
-    // Users see only tasks assigned to them (or tasks they created)
     if (user.access_level === 'user') {
-      query += ` AND (t.id IN (SELECT task_id FROM task_assignments WHERE user_id = ?) OR t.created_by = ?)`;
+      const p1 = ++p, p2 = ++p;
+      query += ` AND (t.id IN (SELECT task_id FROM task_assignments WHERE user_id = $${p1}) OR t.created_by = $${p2})`;
       params.push(user.id, user.id);
     }
 
-    if (status) { query += ' AND t.status = ?'; params.push(status); }
-    if (priority) { query += ' AND t.priority = ?'; params.push(priority); }
-    if (search) { query += ' AND (t.title LIKE ? OR t.description LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+    if (status) { query += ` AND t.status = $${++p}`; params.push(status); }
+    if (priority) { query += ` AND t.priority = $${++p}`; params.push(priority); }
+    if (search) {
+      const p1 = ++p, p2 = ++p;
+      query += ` AND (t.title ILIKE $${p1} OR t.description ILIKE $${p2})`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
 
     query += ' ORDER BY t.created_at DESC';
-    const [tasks] = await pool.execute(query, params);
+    const { rows: tasks } = await pool.query(query, params);
 
-    // Fetch assignees for each task
     for (const task of tasks) {
-      const [assignees] = await pool.execute(
+      const { rows: assignees } = await pool.query(
         `SELECT u.id, u.full_name, u.avatar_url, u.department, u.role
          FROM task_assignments ta
          JOIN users u ON ta.user_id = u.id
-         WHERE ta.task_id = ?`,
+         WHERE ta.task_id = $1`,
         [task.id]
       );
       task.assignees = assignees;
-      task.ventures = task.ventures ? JSON.parse(task.ventures) : [];
-      task.platforms = task.platforms ? JSON.parse(task.platforms) : [];
+      task.ventures = task.ventures || [];
+      task.platforms = task.platforms || [];
     }
 
     res.json({ success: true, data: tasks });
@@ -56,21 +60,21 @@ const getTasks = async (req, res) => {
   }
 };
 
-// GET /api/tasks/my-tasks — personal task view
+// GET /api/tasks/my-tasks
 const getMyTasks = async (req, res) => {
   try {
-    const [tasks] = await pool.execute(
+    const { rows } = await pool.query(
       `SELECT t.id, t.title, t.description, t.priority, t.status, t.deadline,
          tck.id as checklist_id, tck.item_name as checklist_item, tck.is_completed,
          u.full_name as assigned_by_name
        FROM task_checklist tck
        JOIN tasks t ON tck.task_id = t.id
        JOIN users u ON t.created_by = u.id
-       WHERE tck.assigned_to = ?
+       WHERE tck.assigned_to = $1
        ORDER BY t.deadline ASC`,
       [req.user.id]
     );
-    res.json({ success: true, data: tasks });
+    res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
@@ -79,38 +83,40 @@ const getMyTasks = async (req, res) => {
 // GET /api/tasks/:id
 const getTask = async (req, res) => {
   try {
-    const [rows] = await pool.execute(
+    const { rows } = await pool.query(
       `SELECT t.*, u.full_name as created_by_name, u.avatar_url as created_by_avatar
-       FROM tasks t LEFT JOIN users u ON t.created_by = u.id WHERE t.id = ?`,
+       FROM tasks t LEFT JOIN users u ON t.created_by = u.id WHERE t.id = $1`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Task not found' });
 
     const task = rows[0];
 
-    const [assignees] = await pool.execute(
-      `SELECT u.id, u.full_name, u.avatar_url, u.department, u.role FROM task_assignments ta JOIN users u ON ta.user_id = u.id WHERE ta.task_id = ?`,
-      [task.id]
-    );
-    const [checklist] = await pool.execute(
-      `SELECT tck.*, u.full_name as assigned_to_name FROM task_checklist tck LEFT JOIN users u ON tck.assigned_to = u.id WHERE tck.task_id = ? ORDER BY tck.sort_order`,
-      [task.id]
-    );
-    const [files] = await pool.execute(
-      `SELECT tf.*, u.full_name as uploaded_by_name FROM task_files tf JOIN users u ON tf.uploaded_by = u.id WHERE tf.task_id = ? ORDER BY tf.uploaded_at DESC`,
-      [task.id]
-    );
-    const [comments] = await pool.execute(
-      `SELECT tc.*, u.full_name as user_name, u.avatar_url FROM task_comments tc JOIN users u ON tc.user_id = u.id WHERE tc.task_id = ? ORDER BY tc.created_at ASC`,
-      [task.id]
-    );
+    const [{ rows: assignees }, { rows: checklist }, { rows: files }, { rows: comments }] = await Promise.all([
+      pool.query(
+        `SELECT u.id, u.full_name, u.avatar_url, u.department, u.role FROM task_assignments ta JOIN users u ON ta.user_id = u.id WHERE ta.task_id = $1`,
+        [task.id]
+      ),
+      pool.query(
+        `SELECT tck.*, u.full_name as assigned_to_name FROM task_checklist tck LEFT JOIN users u ON tck.assigned_to = u.id WHERE tck.task_id = $1 ORDER BY tck.sort_order`,
+        [task.id]
+      ),
+      pool.query(
+        `SELECT tf.*, u.full_name as uploaded_by_name FROM task_files tf JOIN users u ON tf.uploaded_by = u.id WHERE tf.task_id = $1 ORDER BY tf.uploaded_at DESC`,
+        [task.id]
+      ),
+      pool.query(
+        `SELECT tc.*, u.full_name as user_name, u.avatar_url FROM task_comments tc JOIN users u ON tc.user_id = u.id WHERE tc.task_id = $1 ORDER BY tc.created_at ASC`,
+        [task.id]
+      ),
+    ]);
 
     task.assignees = assignees;
     task.checklist = checklist;
     task.files = files;
     task.comments = comments;
-    task.ventures = task.ventures ? JSON.parse(task.ventures) : [];
-    task.platforms = task.platforms ? JSON.parse(task.platforms) : [];
+    task.ventures = task.ventures || [];
+    task.platforms = task.platforms || [];
 
     res.json({ success: true, data: task });
   } catch (error) {
@@ -119,7 +125,7 @@ const getTask = async (req, res) => {
   }
 };
 
-// POST /api/tasks — create task
+// POST /api/tasks
 const createTask = async (req, res) => {
   try {
     const { title, description, priority, deadline, content_box, assignee_ids, checklist, ventures, platforms } = req.body;
@@ -127,27 +133,28 @@ const createTask = async (req, res) => {
     if (!title) return res.status(400).json({ success: false, message: 'Task title is required' });
 
     const taskId = uuidv4();
-    await pool.execute(
-      `INSERT INTO tasks (id, title, description, priority, deadline, content_box, ventures, platforms, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [taskId, title, description || null, priority || 'medium', deadline || null, content_box || null,
-       ventures?.length ? JSON.stringify(ventures) : null,
-       platforms?.length ? JSON.stringify(platforms) : null,
-       req.user.id]
+    await pool.query(
+      `INSERT INTO tasks (id, title, description, priority, deadline, content_box, ventures, platforms, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        taskId, title, description || null, priority || 'medium', deadline || null,
+        content_box || null,
+        ventures?.length ? ventures : null,
+        platforms?.length ? platforms : null,
+        req.user.id
+      ]
     );
 
-    // Assign users
     if (assignee_ids && assignee_ids.length > 0) {
       for (const userId of assignee_ids) {
-        await pool.execute(
-          'INSERT IGNORE INTO task_assignments (id, task_id, user_id) VALUES (?, ?, ?)',
+        await pool.query(
+          'INSERT INTO task_assignments (id, task_id, user_id) VALUES ($1, $2, $3) ON CONFLICT (task_id, user_id) DO NOTHING',
           [uuidv4(), taskId, userId]
         );
       }
 
-      // Notify assignees
-      const [assigneeUsers] = await pool.execute(
-        `SELECT id, full_name, work_email FROM users WHERE id IN (${assignee_ids.map(() => '?').join(',')})`,
-        assignee_ids
+      const { rows: assigneeUsers } = await pool.query(
+        'SELECT id, full_name, work_email FROM users WHERE id = ANY($1)',
+        [assignee_ids]
       );
 
       for (const u of assigneeUsers) {
@@ -156,19 +163,17 @@ const createTask = async (req, res) => {
       }
     }
 
-    // Add checklist items
     if (checklist && checklist.length > 0) {
       for (let i = 0; i < checklist.length; i++) {
         const item = checklist[i];
         const checkId = uuidv4();
-        await pool.execute(
-          'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, sort_order) VALUES (?, ?, ?, ?, ?)',
+        await pool.query(
+          'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, sort_order) VALUES ($1, $2, $3, $4, $5)',
           [checkId, taskId, item.item_name, item.assigned_to || null, i]
         );
 
-        // Notify checklist assignee
         if (item.assigned_to) {
-          const [cu] = await pool.execute('SELECT full_name, work_email FROM users WHERE id = ?', [item.assigned_to]);
+          const { rows: cu } = await pool.query('SELECT full_name FROM users WHERE id = $1', [item.assigned_to]);
           if (cu.length) {
             await createNotification({ userId: item.assigned_to, title: 'Sub-task Assigned', message: `${item.item_name} — ${title}`, type: 'task', referenceId: taskId });
           }
@@ -183,26 +188,27 @@ const createTask = async (req, res) => {
   }
 };
 
-// PUT /api/tasks/:id — update task
+// PUT /api/tasks/:id
 const updateTask = async (req, res) => {
   try {
     const { title, description, priority, status, deadline, content_box, ventures, platforms } = req.body;
     const { id } = req.params;
 
-    const [existing] = await pool.execute('SELECT * FROM tasks WHERE id = ?', [id]);
+    const { rows: existing } = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
     if (!existing.length) return res.status(404).json({ success: false, message: 'Task not found' });
 
-    await pool.execute(
-      `UPDATE tasks SET title=?, description=?, priority=?, status=?, deadline=?, content_box=?, ventures=?, platforms=?, updated_at=NOW() WHERE id=?`,
+    const t = existing[0];
+    await pool.query(
+      `UPDATE tasks SET title=$1, description=$2, priority=$3, status=$4, deadline=$5, content_box=$6, ventures=$7, platforms=$8, updated_at=NOW() WHERE id=$9`,
       [
-        title || existing[0].title,
-        description !== undefined ? description : existing[0].description,
-        priority || existing[0].priority,
-        status || existing[0].status,
-        deadline !== undefined ? deadline : existing[0].deadline,
-        content_box !== undefined ? content_box : existing[0].content_box,
-        ventures !== undefined ? (ventures?.length ? JSON.stringify(ventures) : null) : existing[0].ventures,
-        platforms !== undefined ? (platforms?.length ? JSON.stringify(platforms) : null) : existing[0].platforms,
+        title || t.title,
+        description !== undefined ? description : t.description,
+        priority || t.priority,
+        status || t.status,
+        deadline !== undefined ? deadline : t.deadline,
+        content_box !== undefined ? content_box : t.content_box,
+        ventures !== undefined ? (ventures?.length ? ventures : null) : t.ventures,
+        platforms !== undefined ? (platforms?.length ? platforms : null) : t.platforms,
         id
       ]
     );
@@ -216,9 +222,9 @@ const updateTask = async (req, res) => {
 // DELETE /api/tasks/:id
 const deleteTask = async (req, res) => {
   try {
-    const [existing] = await pool.execute('SELECT id FROM tasks WHERE id = ?', [req.params.id]);
+    const { rows: existing } = await pool.query('SELECT id FROM tasks WHERE id = $1', [req.params.id]);
     if (!existing.length) return res.status(404).json({ success: false, message: 'Task not found' });
-    await pool.execute('DELETE FROM tasks WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Task deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -231,7 +237,7 @@ const addComment = async (req, res) => {
     const { comment_text } = req.body;
     if (!comment_text) return res.status(400).json({ success: false, message: 'Comment text required' });
     const id = uuidv4();
-    await pool.execute('INSERT INTO task_comments (id, task_id, user_id, comment_text) VALUES (?, ?, ?, ?)', [id, req.params.id, req.user.id, comment_text]);
+    await pool.query('INSERT INTO task_comments (id, task_id, user_id, comment_text) VALUES ($1, $2, $3, $4)', [id, req.params.id, req.user.id, comment_text]);
     res.status(201).json({ success: true, message: 'Comment added', data: { id } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -242,8 +248,8 @@ const addComment = async (req, res) => {
 const updateChecklist = async (req, res) => {
   try {
     const { is_completed } = req.body;
-    await pool.execute(
-      'UPDATE task_checklist SET is_completed = ?, completed_at = ? WHERE id = ? AND task_id = ?',
+    await pool.query(
+      'UPDATE task_checklist SET is_completed = $1, completed_at = $2 WHERE id = $3 AND task_id = $4',
       [is_completed, is_completed ? new Date() : null, req.params.checkId, req.params.id]
     );
     res.json({ success: true, message: 'Checklist updated' });
@@ -252,7 +258,7 @@ const updateChecklist = async (req, res) => {
   }
 };
 
-// GET /api/tasks/stats — dashboard stats
+// GET /api/tasks/stats
 const getTaskStats = async (req, res) => {
   try {
     const user = req.user;
@@ -262,7 +268,7 @@ const getTaskStats = async (req, res) => {
 
     if (user.access_level === 'user') {
       baseQuery += ' JOIN task_assignments ta ON t.id = ta.task_id';
-      whereClause += ' AND ta.user_id = ?';
+      whereClause += ' AND ta.user_id = $1';
       params.push(user.id);
     }
 
@@ -270,18 +276,18 @@ const getTaskStats = async (req, res) => {
     const stats = {};
 
     for (const status of statuses) {
-      const [rows] = await pool.execute(
-        `SELECT COUNT(*) as count ${baseQuery} ${whereClause} AND t.status = ?`,
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int as count ${baseQuery} ${whereClause} AND t.status = $${params.length + 1}`,
         [...params, status]
       );
       stats[status] = rows[0].count;
     }
 
-    const [total] = await pool.execute(`SELECT COUNT(*) as count ${baseQuery} ${whereClause}`, params);
+    const { rows: total } = await pool.query(`SELECT COUNT(*)::int as count ${baseQuery} ${whereClause}`, params);
     stats.total = total[0].count;
 
-    const [overdue] = await pool.execute(
-      `SELECT COUNT(*) as count ${baseQuery} ${whereClause} AND t.deadline < NOW() AND t.status NOT IN ('approved','posted')`,
+    const { rows: overdue } = await pool.query(
+      `SELECT COUNT(*)::int as count ${baseQuery} ${whereClause} AND t.deadline < NOW() AND t.status NOT IN ('approved','posted')`,
       params
     );
     stats.overdue = overdue[0].count;

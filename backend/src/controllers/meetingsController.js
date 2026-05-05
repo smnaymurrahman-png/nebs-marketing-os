@@ -7,6 +7,8 @@ const getMeetings = async (req, res) => {
   try {
     const { status } = req.query;
     const user = req.user;
+    let p = 0;
+    const params = [];
 
     let query = `
       SELECT m.*,
@@ -17,22 +19,22 @@ const getMeetings = async (req, res) => {
       LEFT JOIN users r ON m.reviewed_by = r.id
       WHERE 1=1
     `;
-    const params = [];
 
     if (user.access_level === 'user') {
-      query += ` AND (m.requested_by = ? OR m.id IN (SELECT meeting_id FROM meeting_attendees WHERE user_id = ?))`;
+      const p1 = ++p, p2 = ++p;
+      query += ` AND (m.requested_by = $${p1} OR m.id IN (SELECT meeting_id FROM meeting_attendees WHERE user_id = $${p2}))`;
       params.push(user.id, user.id);
     }
 
-    if (status) { query += ' AND m.status = ?'; params.push(status); }
+    if (status) { query += ` AND m.status = $${++p}`; params.push(status); }
 
     query += ' ORDER BY m.meeting_date ASC, m.meeting_time ASC';
-    const [meetings] = await pool.execute(query, params);
+    const { rows: meetings } = await pool.query(query, params);
 
     for (const meeting of meetings) {
-      const [attendees] = await pool.execute(
+      const { rows: attendees } = await pool.query(
         `SELECT u.id, u.full_name, u.avatar_url, u.role FROM meeting_attendees ma
-         JOIN users u ON ma.user_id = u.id WHERE ma.meeting_id = ?`,
+         JOIN users u ON ma.user_id = u.id WHERE ma.meeting_id = $1`,
         [meeting.id]
       );
       meeting.attendees = attendees;
@@ -48,20 +50,20 @@ const getMeetings = async (req, res) => {
 // GET /api/meetings/:id
 const getMeeting = async (req, res) => {
   try {
-    const [rows] = await pool.execute(
+    const { rows } = await pool.query(
       `SELECT m.*, u.full_name as requested_by_name, r.full_name as reviewed_by_name
        FROM meetings m
        LEFT JOIN users u ON m.requested_by = u.id
        LEFT JOIN users r ON m.reviewed_by = r.id
-       WHERE m.id = ?`,
+       WHERE m.id = $1`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Meeting not found' });
 
     const meeting = rows[0];
-    const [attendees] = await pool.execute(
+    const { rows: attendees } = await pool.query(
       `SELECT u.id, u.full_name, u.avatar_url, u.role FROM meeting_attendees ma
-       JOIN users u ON ma.user_id = u.id WHERE ma.meeting_id = ?`,
+       JOIN users u ON ma.user_id = u.id WHERE ma.meeting_id = $1`,
       [meeting.id]
     );
     meeting.attendees = attendees;
@@ -81,23 +83,22 @@ const createMeeting = async (req, res) => {
     }
 
     const id = uuidv4();
-    await pool.execute(
-      'INSERT INTO meetings (id, topic, meeting_date, meeting_time, priority, notes, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    await pool.query(
+      'INSERT INTO meetings (id, topic, meeting_date, meeting_time, priority, notes, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [id, topic, meeting_date, meeting_time, priority || 'medium', notes || null, req.user.id]
     );
 
     if (attendee_ids && attendee_ids.length > 0) {
       for (const userId of attendee_ids) {
-        await pool.execute(
-          'INSERT IGNORE INTO meeting_attendees (id, meeting_id, user_id) VALUES (?, ?, ?)',
+        await pool.query(
+          'INSERT INTO meeting_attendees (id, meeting_id, user_id) VALUES ($1, $2, $3) ON CONFLICT (meeting_id, user_id) DO NOTHING',
           [uuidv4(), id, userId]
         );
       }
     }
 
-    // Notify admins
-    const [admins] = await pool.execute(
-      "SELECT id FROM users WHERE access_level IN ('admin','super_admin') AND is_active = TRUE AND id != ?",
+    const { rows: admins } = await pool.query(
+      "SELECT id FROM users WHERE access_level IN ('admin','super_admin') AND is_active = TRUE AND id != $1",
       [req.user.id]
     );
     for (const admin of admins) {
@@ -119,7 +120,7 @@ const createMeeting = async (req, res) => {
 const updateMeeting = async (req, res) => {
   try {
     const { topic, meeting_date, meeting_time, priority, notes } = req.body;
-    const [rows] = await pool.execute('SELECT * FROM meetings WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM meetings WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Meeting not found' });
 
     const m = rows[0];
@@ -127,8 +128,8 @@ const updateMeeting = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    await pool.execute(
-      'UPDATE meetings SET topic=?, meeting_date=?, meeting_time=?, priority=?, notes=?, updated_at=NOW() WHERE id=?',
+    await pool.query(
+      'UPDATE meetings SET topic=$1, meeting_date=$2, meeting_time=$3, priority=$4, notes=$5, updated_at=NOW() WHERE id=$6',
       [topic || m.topic, meeting_date || m.meeting_date, meeting_time || m.meeting_time,
         priority || m.priority, notes ?? m.notes, req.params.id]
     );
@@ -141,14 +142,14 @@ const updateMeeting = async (req, res) => {
 // DELETE /api/meetings/:id
 const deleteMeeting = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM meetings WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM meetings WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Meeting not found' });
 
     if (rows[0].requested_by !== req.user.id && req.user.access_level === 'user') {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    await pool.execute('DELETE FROM meetings WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM meetings WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Meeting deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -163,11 +164,11 @@ const reviewMeeting = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid status' });
     }
 
-    const [rows] = await pool.execute('SELECT * FROM meetings WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM meetings WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Meeting not found' });
 
-    await pool.execute(
-      'UPDATE meetings SET status=?, admin_comment=?, reviewed_by=?, updated_at=NOW() WHERE id=?',
+    await pool.query(
+      'UPDATE meetings SET status=$1, admin_comment=$2, reviewed_by=$3, updated_at=NOW() WHERE id=$4',
       [status, admin_comment || null, req.user.id, req.params.id]
     );
 

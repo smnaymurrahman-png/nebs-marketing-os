@@ -7,6 +7,8 @@ const getIdeas = async (req, res) => {
   try {
     const { status } = req.query;
     const user = req.user;
+    let p = 0;
+    const params = [];
 
     let query = `
       SELECT i.*,
@@ -17,18 +19,17 @@ const getIdeas = async (req, res) => {
       LEFT JOIN users r ON i.reviewed_by = r.id
       WHERE 1=1
     `;
-    const params = [];
 
     if (user.access_level === 'user') {
-      query += ' AND i.submitted_by = ?';
+      query += ` AND i.submitted_by = $${++p}`;
       params.push(user.id);
     }
 
-    if (status) { query += ' AND i.status = ?'; params.push(status); }
+    if (status) { query += ` AND i.status = $${++p}`; params.push(status); }
 
     query += ' ORDER BY i.created_at DESC';
-    const [ideas] = await pool.execute(query, params);
-    res.json({ success: true, data: ideas });
+    const { rows } = await pool.query(query, params);
+    res.json({ success: true, data: rows });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -38,13 +39,13 @@ const getIdeas = async (req, res) => {
 // GET /api/ideas/:id
 const getIdea = async (req, res) => {
   try {
-    const [rows] = await pool.execute(
+    const { rows } = await pool.query(
       `SELECT i.*, u.full_name as submitted_by_name, u.avatar_url as submitted_by_avatar,
          r.full_name as reviewed_by_name
        FROM ideas i
        LEFT JOIN users u ON i.submitted_by = u.id
        LEFT JOIN users r ON i.reviewed_by = r.id
-       WHERE i.id = ?`,
+       WHERE i.id = $1`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Idea not found' });
@@ -61,15 +62,14 @@ const createIdea = async (req, res) => {
     if (!title) return res.status(400).json({ success: false, message: 'Title is required' });
 
     const id = uuidv4();
-    await pool.execute(
-      'INSERT INTO ideas (id, title, description, doc_url, image_url, reference_links, submitted_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    await pool.query(
+      'INSERT INTO ideas (id, title, description, doc_url, image_url, reference_links, submitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [id, title, description || null, doc_url || null, image_url || null,
-        reference_links ? JSON.stringify(reference_links) : null, req.user.id]
+        reference_links || null, req.user.id]
     );
 
-    // Notify admins
-    const [admins] = await pool.execute(
-      "SELECT id FROM users WHERE access_level IN ('admin','super_admin') AND is_active = TRUE AND id != ?",
+    const { rows: admins } = await pool.query(
+      "SELECT id FROM users WHERE access_level IN ('admin','super_admin') AND is_active = TRUE AND id != $1",
       [req.user.id]
     );
     for (const admin of admins) {
@@ -90,7 +90,7 @@ const createIdea = async (req, res) => {
 const updateIdea = async (req, res) => {
   try {
     const { title, description, doc_url, image_url, reference_links } = req.body;
-    const [rows] = await pool.execute('SELECT * FROM ideas WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM ideas WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Idea not found' });
 
     const idea = rows[0];
@@ -98,11 +98,11 @@ const updateIdea = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    await pool.execute(
-      'UPDATE ideas SET title=?, description=?, doc_url=?, image_url=?, reference_links=?, updated_at=NOW() WHERE id=?',
+    await pool.query(
+      'UPDATE ideas SET title=$1, description=$2, doc_url=$3, image_url=$4, reference_links=$5, updated_at=NOW() WHERE id=$6',
       [title || idea.title, description ?? idea.description, doc_url ?? idea.doc_url,
         image_url ?? idea.image_url,
-        reference_links !== undefined ? JSON.stringify(reference_links) : idea.reference_links,
+        reference_links !== undefined ? reference_links : idea.reference_links,
         req.params.id]
     );
     res.json({ success: true, message: 'Idea updated' });
@@ -114,14 +114,14 @@ const updateIdea = async (req, res) => {
 // DELETE /api/ideas/:id
 const deleteIdea = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM ideas WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM ideas WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Idea not found' });
 
     if (rows[0].submitted_by !== req.user.id && req.user.access_level === 'user') {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    await pool.execute('DELETE FROM ideas WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM ideas WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Idea deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -136,11 +136,11 @@ const reviewIdea = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Status must be approved or rejected' });
     }
 
-    const [rows] = await pool.execute('SELECT * FROM ideas WHERE id = ?', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM ideas WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Idea not found' });
 
-    await pool.execute(
-      'UPDATE ideas SET status=?, admin_comment=?, reviewed_by=?, reviewed_at=NOW(), updated_at=NOW() WHERE id=?',
+    await pool.query(
+      'UPDATE ideas SET status=$1, admin_comment=$2, reviewed_by=$3, reviewed_at=NOW(), updated_at=NOW() WHERE id=$4',
       [status, admin_comment || null, req.user.id, req.params.id]
     );
 

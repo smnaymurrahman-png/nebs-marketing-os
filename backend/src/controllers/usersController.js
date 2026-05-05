@@ -2,24 +2,24 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
 
-const safeUser = (u) => {
-  const { password, ...rest } = u;
-  return rest;
-};
-
-// GET /api/users — list all users (admin+)
+// GET /api/users
 const getUsers = async (req, res) => {
   try {
     const { department, access_level, search } = req.query;
     let query = `SELECT id, full_name, work_email, department, role, access_level, is_active, avatar_url, last_login, created_at FROM users WHERE 1=1`;
     const params = [];
+    let p = 0;
 
-    if (department) { query += ' AND department = ?'; params.push(department); }
-    if (access_level) { query += ' AND access_level = ?'; params.push(access_level); }
-    if (search) { query += ' AND (full_name LIKE ? OR work_email LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+    if (department) { query += ` AND department = $${++p}`; params.push(department); }
+    if (access_level) { query += ` AND access_level = $${++p}`; params.push(access_level); }
+    if (search) {
+      const p1 = ++p, p2 = ++p;
+      query += ` AND (full_name ILIKE $${p1} OR work_email ILIKE $${p2})`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
 
     query += ' ORDER BY created_at DESC';
-    const [rows] = await pool.execute(query, params);
+    const { rows } = await pool.query(query, params);
     res.json({ success: true, data: rows });
   } catch (error) {
     console.error(error);
@@ -30,8 +30,8 @@ const getUsers = async (req, res) => {
 // GET /api/users/:id
 const getUser = async (req, res) => {
   try {
-    const [rows] = await pool.execute(
-      'SELECT id, full_name, work_email, department, role, access_level, is_active, avatar_url, last_login, created_at FROM users WHERE id = ?',
+    const { rows } = await pool.query(
+      'SELECT id, full_name, work_email, department, role, access_level, is_active, avatar_url, last_login, created_at FROM users WHERE id = $1',
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'User not found' });
@@ -41,7 +41,7 @@ const getUser = async (req, res) => {
   }
 };
 
-// POST /api/users — create member (super_admin only)
+// POST /api/users
 const createUser = async (req, res) => {
   try {
     const { full_name, work_email, password, department, role, access_level } = req.body;
@@ -50,12 +50,11 @@ const createUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
 
-    // Super admin can only be created through seeding
     if (access_level === 'super_admin') {
       return res.status(403).json({ success: false, message: 'Cannot create super admin through this endpoint' });
     }
 
-    const [existing] = await pool.execute('SELECT id FROM users WHERE work_email = ?', [work_email.toLowerCase()]);
+    const { rows: existing } = await pool.query('SELECT id FROM users WHERE work_email = $1', [work_email.toLowerCase()]);
     if (existing.length) {
       return res.status(409).json({ success: false, message: 'Email already exists' });
     }
@@ -63,14 +62,14 @@ const createUser = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 12);
     const id = uuidv4();
 
-    await pool.execute(
+    await pool.query(
       `INSERT INTO users (id, full_name, work_email, password, department, role, access_level)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [id, full_name, work_email.toLowerCase(), hashedPassword, department, role, access_level]
     );
 
-    const [newUser] = await pool.execute(
-      'SELECT id, full_name, work_email, department, role, access_level, is_active, created_at FROM users WHERE id = ?',
+    const { rows: newUser } = await pool.query(
+      'SELECT id, full_name, work_email, department, role, access_level, is_active, created_at FROM users WHERE id = $1',
       [id]
     );
 
@@ -81,27 +80,25 @@ const createUser = async (req, res) => {
   }
 };
 
-// PUT /api/users/:id — update member
+// PUT /api/users/:id
 const updateUser = async (req, res) => {
   try {
     const { full_name, work_email, department, role, access_level, is_active } = req.body;
     const { id } = req.params;
 
-    // Only super_admin can change access levels
     if (access_level && req.user.access_level !== 'super_admin') {
       return res.status(403).json({ success: false, message: 'Only super admin can change access level' });
     }
 
-    const [existing] = await pool.execute('SELECT * FROM users WHERE id = ?', [id]);
+    const { rows: existing } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
     if (!existing.length) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // Protect super admin from being downgraded by non-super-admin
     if (existing[0].access_level === 'super_admin' && req.user.access_level !== 'super_admin') {
       return res.status(403).json({ success: false, message: 'Cannot modify super admin' });
     }
 
-    await pool.execute(
-      `UPDATE users SET full_name = ?, work_email = ?, department = ?, role = ?, access_level = ?, is_active = ?, updated_at = NOW() WHERE id = ?`,
+    await pool.query(
+      `UPDATE users SET full_name=$1, work_email=$2, department=$3, role=$4, access_level=$5, is_active=$6, updated_at=NOW() WHERE id=$7`,
       [
         full_name || existing[0].full_name,
         work_email || existing[0].work_email,
@@ -113,8 +110,8 @@ const updateUser = async (req, res) => {
       ]
     );
 
-    const [updated] = await pool.execute(
-      'SELECT id, full_name, work_email, department, role, access_level, is_active, updated_at FROM users WHERE id = ?',
+    const { rows: updated } = await pool.query(
+      'SELECT id, full_name, work_email, department, role, access_level, is_active, updated_at FROM users WHERE id = $1',
       [id]
     );
 
@@ -125,7 +122,7 @@ const updateUser = async (req, res) => {
   }
 };
 
-// DELETE /api/users/:id — delete member (super_admin only)
+// DELETE /api/users/:id
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -134,14 +131,14 @@ const deleteUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
     }
 
-    const [existing] = await pool.execute('SELECT access_level FROM users WHERE id = ?', [id]);
+    const { rows: existing } = await pool.query('SELECT access_level FROM users WHERE id = $1', [id]);
     if (!existing.length) return res.status(404).json({ success: false, message: 'User not found' });
 
     if (existing[0].access_level === 'super_admin') {
       return res.status(403).json({ success: false, message: 'Cannot delete super admin' });
     }
 
-    await pool.execute('DELETE FROM users WHERE id = ?', [id]);
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ success: true, message: 'Member deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -157,7 +154,7 @@ const adminResetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
     }
     const hashed = await bcrypt.hash(new_password, 12);
-    await pool.execute('UPDATE users SET password = ? WHERE id = ?', [hashed, req.params.id]);
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.params.id]);
     res.json({ success: true, message: 'Password reset successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });

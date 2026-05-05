@@ -11,8 +11,8 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const [rows] = await pool.execute(
-      'SELECT id, full_name, work_email, department, role, access_level, is_active, avatar_url FROM users WHERE id = ?',
+    const { rows } = await pool.query(
+      'SELECT id, full_name, work_email, department, role, access_level, is_active, avatar_url FROM users WHERE id = $1',
       [decoded.userId]
     );
 

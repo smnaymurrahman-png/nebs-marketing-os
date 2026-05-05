@@ -19,8 +19,8 @@ const login = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
-    const [rows] = await pool.execute(
-      'SELECT * FROM users WHERE work_email = ? AND is_active = TRUE',
+    const { rows } = await pool.query(
+      'SELECT * FROM users WHERE work_email = $1 AND is_active = TRUE',
       [email.toLowerCase().trim()]
     );
 
@@ -35,20 +35,15 @@ const login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Update last login
-    await pool.execute('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = generateToken(user.id);
-
     const { password: _, ...userWithoutPassword } = user;
 
     res.json({
       success: true,
       message: 'Login successful',
-      data: {
-        token,
-        user: userWithoutPassword,
-      },
+      data: { token, user: userWithoutPassword },
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -65,19 +60,18 @@ const getMe = async (req, res) => {
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const [rows] = await pool.execute('SELECT * FROM users WHERE work_email = ?', [email]);
+    const { rows } = await pool.query('SELECT * FROM users WHERE work_email = $1', [email]);
 
-    // Always return success to prevent email enumeration
     if (!rows.length) {
       return res.json({ success: true, message: 'If this email exists, a reset link has been sent.' });
     }
 
     const user = rows[0];
     const token = uuidv4();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    await pool.execute(
-      'INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
+    await pool.query(
+      'INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)',
       [uuidv4(), user.id, token, expiresAt]
     );
 
@@ -96,8 +90,8 @@ const resetPassword = async (req, res) => {
   try {
     const { token, password } = req.body;
 
-    const [rows] = await pool.execute(
-      'SELECT * FROM password_reset_tokens WHERE token = ? AND used = FALSE AND expires_at > NOW()',
+    const { rows } = await pool.query(
+      'SELECT * FROM password_reset_tokens WHERE token = $1 AND used = FALSE AND expires_at > NOW()',
       [token]
     );
 
@@ -108,8 +102,8 @@ const resetPassword = async (req, res) => {
     const resetToken = rows[0];
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    await pool.execute('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, resetToken.user_id]);
-    await pool.execute('UPDATE password_reset_tokens SET used = TRUE WHERE id = ?', [resetToken.id]);
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, resetToken.user_id]);
+    await pool.query('UPDATE password_reset_tokens SET used = TRUE WHERE id = $1', [resetToken.id]);
 
     res.json({ success: true, message: 'Password reset successful' });
   } catch (error) {
@@ -122,7 +116,7 @@ const resetPassword = async (req, res) => {
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const [rows] = await pool.execute('SELECT password FROM users WHERE id = ?', [req.user.id]);
+    const { rows } = await pool.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
     const isMatch = await bcrypt.compare(currentPassword, rows[0].password);
 
     if (!isMatch) {
@@ -130,7 +124,7 @@ const changePassword = async (req, res) => {
     }
 
     const hashed = await bcrypt.hash(newPassword, 12);
-    await pool.execute('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id]);
+    await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.user.id]);
 
     res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
@@ -144,13 +138,13 @@ const updateProfile = async (req, res) => {
     const { full_name, department, role } = req.body;
     if (!full_name) return res.status(400).json({ success: false, message: 'Name is required' });
 
-    await pool.execute(
-      'UPDATE users SET full_name=?, department=?, role=?, updated_at=NOW() WHERE id=?',
+    await pool.query(
+      'UPDATE users SET full_name=$1, department=$2, role=$3, updated_at=NOW() WHERE id=$4',
       [full_name, department || req.user.department, role || req.user.role, req.user.id]
     );
 
-    const [rows] = await pool.execute(
-      'SELECT id, full_name, work_email, department, role, access_level, avatar_url FROM users WHERE id = ?',
+    const { rows } = await pool.query(
+      'SELECT id, full_name, work_email, department, role, access_level, avatar_url FROM users WHERE id = $1',
       [req.user.id]
     );
     res.json({ success: true, message: 'Profile updated', data: { user: rows[0] } });
