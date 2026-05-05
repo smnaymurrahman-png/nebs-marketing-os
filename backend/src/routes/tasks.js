@@ -44,12 +44,11 @@ router.post('/:id/files', authenticate, upload.single('file'), async (req, res) 
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
     const fileId = uuidv4();
     const fileUrl = `/uploads/${req.file.filename}`;
-    await pool.execute(
-      'INSERT INTO task_files (id, task_id, file_name, file_url, file_type, file_size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    await pool.query(
+      'INSERT INTO task_files (id, task_id, file_name, file_url, file_type, file_size, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [fileId, req.params.id, req.file.originalname, fileUrl, req.file.mimetype, req.file.size, req.user.id]
     );
-    // Move task to in_review when user submits
-    await pool.execute("UPDATE tasks SET status = 'in_review', updated_at = NOW() WHERE id = ?", [req.params.id]);
+    await pool.query("UPDATE tasks SET status = 'in_review', updated_at = NOW() WHERE id = $1", [req.params.id]);
     res.status(201).json({ success: true, data: { id: fileId, file_url: fileUrl } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Upload failed' });
@@ -60,14 +59,13 @@ router.post('/:id/files', authenticate, upload.single('file'), async (req, res) 
 router.put('/:taskId/files/:fileId/review', authenticate, requireAdmin, async (req, res) => {
   try {
     const { review_status, review_comment } = req.body;
-    await pool.execute(
-      'UPDATE task_files SET review_status = ?, review_comment = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ? AND task_id = ?',
+    await pool.query(
+      'UPDATE task_files SET review_status = $1, review_comment = $2, reviewed_by = $3, reviewed_at = NOW() WHERE id = $4 AND task_id = $5',
       [review_status, review_comment || null, req.user.id, req.params.fileId, req.params.taskId]
     );
 
-    // Update task status based on review
     const newStatus = review_status === 'accepted' ? 'approved' : 'in_revision';
-    await pool.execute("UPDATE tasks SET status = ?, updated_at = NOW() WHERE id = ?", [newStatus, req.params.taskId]);
+    await pool.query("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", [newStatus, req.params.taskId]);
 
     res.json({ success: true, message: `File ${review_status}` });
   } catch (error) {
