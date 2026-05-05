@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: nebs-marketing-os-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        value: nebs-marketing-os-super-secret-jwt-key-2024
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: FRONTEND_URL
+        value: https://nebs-marketing-os.vercel.app
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: PORT
+        value: 10000
