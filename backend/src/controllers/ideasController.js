@@ -65,7 +65,7 @@ const createIdea = async (req, res) => {
     await pool.query(
       'INSERT INTO ideas (id, title, description, doc_url, image_url, reference_links, submitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [id, title, description || null, doc_url || null, image_url || null,
-        reference_links || null, req.user.id]
+        reference_links ? JSON.stringify(reference_links) : null, req.user.id]
     );
 
     const { rows: admins } = await pool.query(
@@ -102,7 +102,7 @@ const updateIdea = async (req, res) => {
       'UPDATE ideas SET title=$1, description=$2, doc_url=$3, image_url=$4, reference_links=$5, updated_at=NOW() WHERE id=$6',
       [title || idea.title, description ?? idea.description, doc_url ?? idea.doc_url,
         image_url ?? idea.image_url,
-        reference_links !== undefined ? reference_links : idea.reference_links,
+        reference_links !== undefined ? (reference_links ? JSON.stringify(reference_links) : null) : (idea.reference_links ? JSON.stringify(idea.reference_links) : null),
         req.params.id]
     );
     res.json({ success: true, message: 'Idea updated' });

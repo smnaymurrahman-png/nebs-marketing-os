@@ -138,8 +138,8 @@ const createTask = async (req, res) => {
       [
         taskId, title, description || null, priority || 'medium', deadline || null,
         content_box || null,
-        ventures?.length ? ventures : null,
-        platforms?.length ? platforms : null,
+        ventures?.length ? JSON.stringify(ventures) : null,
+        platforms?.length ? JSON.stringify(platforms) : null,
         req.user.id
       ]
     );
@@ -207,8 +207,8 @@ const updateTask = async (req, res) => {
         status || t.status,
         deadline !== undefined ? deadline : t.deadline,
         content_box !== undefined ? content_box : t.content_box,
-        ventures !== undefined ? (ventures?.length ? ventures : null) : t.ventures,
-        platforms !== undefined ? (platforms?.length ? platforms : null) : t.platforms,
+        ventures !== undefined ? (ventures?.length ? JSON.stringify(ventures) : null) : (t.ventures ? JSON.stringify(t.ventures) : null),
+        platforms !== undefined ? (platforms?.length ? JSON.stringify(platforms) : null) : (t.platforms ? JSON.stringify(t.platforms) : null),
         id
       ]
     );
