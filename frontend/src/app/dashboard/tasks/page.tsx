@@ -47,11 +47,9 @@ export default function TasksPage() {
           <h1 className="page-title">Tasks</h1>
           <p className="text-slate-500 text-sm mt-0.5">{tasks.length} task{tasks.length !== 1 ? 's' : ''} total</p>
         </div>
-        {isAdmin && (
-          <Link href="/dashboard/tasks/new" className="btn-primary">
-            <Plus className="w-4 h-4" /> New Task
-          </Link>
-        )}
+        <Link href="/dashboard/tasks/new" className="btn-primary">
+          <Plus className="w-4 h-4" /> New Task
+        </Link>
       </div>
 
       {/* Filters */}
@@ -111,7 +109,7 @@ export default function TasksPage() {
       ) : tasks.length === 0 ? (
         <div className="card p-12 text-center">
           <p className="text-slate-400">No tasks found.</p>
-          {isAdmin && <Link href="/dashboard/tasks/new" className="text-brand-600 text-sm mt-2 inline-block hover:underline">Create one →</Link>}
+          <Link href="/dashboard/tasks/new" className="text-brand-600 text-sm mt-2 inline-block hover:underline">Create one →</Link>
         </div>
       ) : (
         <div className="space-y-2">

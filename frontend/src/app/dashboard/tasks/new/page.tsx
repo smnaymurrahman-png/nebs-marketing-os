@@ -31,10 +31,6 @@ export default function NewTaskPage() {
   const router = useRouter()
   const { user } = useAuthStore()
 
-  useEffect(() => {
-    if (user?.access_level === 'user') router.push('/dashboard/tasks')
-  }, [user])
-
   const [members, setMembers] = useState<Member[]>([])
   const [saving, setSaving] = useState(false)
 
