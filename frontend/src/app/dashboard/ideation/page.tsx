@@ -1,14 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Plus, Lightbulb, ExternalLink, CheckCircle, XCircle, Clock, Trash2, Edit2 } from 'lucide-react'
+import { Plus, Lightbulb, ExternalLink, CheckCircle, XCircle, Clock, Trash2, Edit2, Eye, X } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { cn, formatDate, getInitials } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, getInitials } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 interface Idea {
   id: string; title: string; description: string; doc_url?: string
-  image_url?: string; reference_links?: string; status: string
+  image_url?: string; reference_links?: any; status: string
   submitted_by: string; submitted_by_name: string; admin_comment?: string
   reviewed_by_name?: string; reviewed_at?: string; created_at: string
 }
@@ -17,6 +17,21 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string; ico
   pending:  { label: 'Pending',  color: 'text-amber-700',  bg: 'bg-amber-50',  icon: Clock },
   approved: { label: 'Approved', color: 'text-green-700',  bg: 'bg-green-50',  icon: CheckCircle },
   rejected: { label: 'Rejected', color: 'text-red-700',    bg: 'bg-red-50',    icon: XCircle },
+}
+
+function normalizeUrl(url: string) {
+  if (!url) return url
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  return `https://${url}`
+}
+
+function parseRefs(raw: any): string[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter(Boolean)
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) } catch { return raw.split('\n').filter(Boolean) }
+  }
+  return []
 }
 
 export default function IdeationPage() {
@@ -28,6 +43,7 @@ export default function IdeationPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editIdea, setEditIdea] = useState<Idea | null>(null)
+  const [viewIdea, setViewIdea] = useState<Idea | null>(null)
   const [reviewModal, setReviewModal] = useState<Idea | null>(null)
   const [reviewStatus, setReviewStatus] = useState<'approved' | 'rejected'>('approved')
   const [reviewComment, setReviewComment] = useState('')
@@ -55,10 +71,7 @@ export default function IdeationPage() {
 
   const openEdit = (idea: Idea) => {
     setEditIdea(idea)
-    let refs = ''
-    if (idea.reference_links) {
-      try { refs = JSON.parse(idea.reference_links).join('\n') } catch { refs = idea.reference_links }
-    }
+    const refs = parseRefs(idea.reference_links).join('\n')
     setForm({ title: idea.title, description: idea.description || '', doc_url: idea.doc_url || '', image_url: idea.image_url || '', reference_links: refs })
     setShowModal(true)
   }
@@ -69,7 +82,8 @@ export default function IdeationPage() {
     try {
       const payload = {
         ...form,
-        reference_links: form.reference_links ? form.reference_links.split('\n').filter(Boolean) : []
+        doc_url: form.doc_url ? normalizeUrl(form.doc_url) : '',
+        reference_links: form.reference_links ? form.reference_links.split('\n').filter(Boolean).map(normalizeUrl) : []
       }
       if (editIdea) {
         await api.put(`/ideas/${editIdea.id}`, payload)
@@ -108,13 +122,13 @@ export default function IdeationPage() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="page-title">Ideation Center</h1>
           <p className="text-slate-500 text-sm mt-0.5">Submit and track content ideas</p>
         </div>
-        <button onClick={openCreate} className="btn-primary">
-          <Plus className="w-4 h-4" /> Submit Idea
+        <button onClick={openCreate} className="btn-primary shrink-0">
+          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Submit Idea</span><span className="sm:hidden">New</span>
         </button>
       </div>
 
@@ -151,10 +165,7 @@ export default function IdeationPage() {
             const statusCfg = STATUS_MAP[idea.status] || STATUS_MAP.pending
             const StatusIcon = statusCfg.icon
             const isOwner = idea.submitted_by === user?.id
-            let refs: string[] = []
-            if (idea.reference_links) {
-              try { refs = JSON.parse(idea.reference_links) } catch {}
-            }
+            const refs = parseRefs(idea.reference_links)
 
             return (
               <div key={idea.id} className="card p-5 flex flex-col gap-3 hover:shadow-card-hover transition-all">
@@ -177,41 +188,82 @@ export default function IdeationPage() {
                   <p className="text-slate-600 text-xs leading-relaxed line-clamp-3">{idea.description}</p>
                 )}
 
-                {idea.admin_comment && (
-                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                    <p className="text-xs text-slate-500 italic">"{idea.admin_comment}"</p>
-                    {idea.reviewed_by_name && (
-                      <p className="text-xs text-slate-400 mt-1">— {idea.reviewed_by_name}</p>
+                {/* Reviewer info — show for approved/rejected ideas */}
+                {(idea.status === 'approved' || idea.status === 'rejected') && idea.reviewed_by_name && (
+                  <div className={cn(
+                    'rounded-lg p-3 border text-xs',
+                    idea.status === 'approved' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'
+                  )}>
+                    <p className={cn('font-semibold', idea.status === 'approved' ? 'text-green-700' : 'text-red-700')}>
+                      {idea.status === 'approved' ? '✅ Approved' : '❌ Rejected'} by {idea.reviewed_by_name}
+                    </p>
+                    {idea.reviewed_at && (
+                      <p className="text-slate-400 mt-0.5">{formatDate(idea.reviewed_at)}</p>
+                    )}
+                    {idea.admin_comment && (
+                      <p className="text-slate-600 italic mt-1">"{idea.admin_comment}"</p>
                     )}
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-2">
-                  {idea.doc_url && (
-                    <a href={idea.doc_url} target="_blank" rel="noreferrer"
-                      className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 font-medium">
-                      <ExternalLink className="w-3 h-3" /> Doc
-                    </a>
-                  )}
-                  {refs.length > 0 && refs.map((ref, i) => (
-                    <a key={i} href={ref} target="_blank" rel="noreferrer"
-                      className="text-xs text-slate-400 hover:text-brand-600 flex items-center gap-1">
-                      <ExternalLink className="w-3 h-3" /> Ref {i + 1}
-                    </a>
-                  ))}
-                </div>
+                {/* Doc & reference links */}
+                {(idea.doc_url || refs.length > 0) && (
+                  <div className="flex flex-wrap gap-2">
+                    {idea.doc_url && (
+                      <a
+                        href={normalizeUrl(idea.doc_url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 font-medium bg-brand-50 px-2 py-1 rounded-md"
+                      >
+                        <ExternalLink className="w-3 h-3" /> Open Doc
+                      </a>
+                    )}
+                    {refs.map((ref, i) => (
+                      <a key={i} href={normalizeUrl(ref)} target="_blank" rel="noreferrer"
+                        className="text-xs text-slate-500 hover:text-brand-600 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-md">
+                        <ExternalLink className="w-3 h-3" /> Ref {i + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
 
+                {/* Card actions */}
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-auto">
-                  {(isOwner || isAdmin) && (
+                  {isOwner ? (
                     <>
-                      <button onClick={() => openEdit(idea)} className="p-1.5 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-600 transition-colors">
-                        <Edit2 className="w-3.5 h-3.5" />
+                      <button
+                        onClick={() => openEdit(idea)}
+                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-brand-50 text-slate-500 hover:text-brand-600 transition-colors text-xs font-medium"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" /> Edit
                       </button>
-                      <button onClick={() => handleDelete(idea.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
+                      <button
+                        onClick={() => handleDelete(idea.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </>
+                  ) : (
+                    <button
+                      onClick={() => setViewIdea(idea)}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors text-xs font-medium"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> View
+                    </button>
                   )}
+
+                  {/* Admin delete for non-owner ideas */}
+                  {isAdmin && !isOwner && (
+                    <button
+                      onClick={() => handleDelete(idea.id)}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
                   {isAdmin && idea.status === 'pending' && (
                     <button
                       onClick={() => { setReviewModal(idea); setReviewStatus('approved'); setReviewComment('') }}
@@ -227,12 +279,108 @@ export default function IdeationPage() {
         </div>
       )}
 
+      {/* View Modal (read-only) */}
+      {viewIdea && (() => {
+        const statusCfg = STATUS_MAP[viewIdea.status] || STATUS_MAP.pending
+        const StatusIcon = statusCfg.icon
+        const refs = parseRefs(viewIdea.reference_links)
+        return (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-modal w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold text-slate-900 leading-snug">{viewIdea.title}</h2>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className={cn('badge flex items-center gap-1', statusCfg.bg, statusCfg.color)}>
+                      <StatusIcon className="w-3 h-3" /> {statusCfg.label}
+                    </span>
+                    <span className="text-xs text-slate-400">by {viewIdea.submitted_by_name}</span>
+                    <span className="text-xs text-slate-300">·</span>
+                    <span className="text-xs text-slate-400">{formatDate(viewIdea.created_at)}</span>
+                  </div>
+                </div>
+                <button onClick={() => setViewIdea(null)} className="text-slate-400 hover:text-slate-600 p-1 shrink-0">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                {viewIdea.description && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Description</p>
+                    <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{viewIdea.description}</p>
+                  </div>
+                )}
+
+                {/* Approval info */}
+                {(viewIdea.status === 'approved' || viewIdea.status === 'rejected') && viewIdea.reviewed_by_name && (
+                  <div className={cn(
+                    'rounded-xl p-4 border',
+                    viewIdea.status === 'approved' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'
+                  )}>
+                    <p className={cn('font-semibold text-sm', viewIdea.status === 'approved' ? 'text-green-700' : 'text-red-700')}>
+                      {viewIdea.status === 'approved' ? '✅ Approved' : '❌ Rejected'} by {viewIdea.reviewed_by_name}
+                    </p>
+                    {viewIdea.reviewed_at && (
+                      <p className="text-xs text-slate-500 mt-0.5">{formatDateTime(viewIdea.reviewed_at)}</p>
+                    )}
+                    {viewIdea.admin_comment && (
+                      <p className="text-slate-600 italic text-sm mt-2 border-t border-green-100 pt-2">
+                        "{viewIdea.admin_comment}"
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {viewIdea.image_url && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Image</p>
+                    <img src={viewIdea.image_url} alt="idea" className="rounded-lg max-h-48 object-cover w-full" onError={e => (e.currentTarget.style.display = 'none')} />
+                  </div>
+                )}
+
+                {(viewIdea.doc_url || refs.length > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Links</p>
+                    <div className="flex flex-wrap gap-2">
+                      {viewIdea.doc_url && (
+                        <a
+                          href={normalizeUrl(viewIdea.doc_url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-2 bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" /> Open Document
+                        </a>
+                      )}
+                      {refs.map((ref, i) => (
+                        <a key={i} href={normalizeUrl(ref)} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-sm transition-colors">
+                          <ExternalLink className="w-3.5 h-3.5" /> Reference {i + 1}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
+                <button onClick={() => setViewIdea(null)} className="btn-secondary">Close</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-modal w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-slate-100">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-900">{editIdea ? 'Edit Idea' : 'Submit New Idea'}</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <div>
@@ -246,6 +394,7 @@ export default function IdeationPage() {
               <div>
                 <label className="label">Doc / Google Drive URL</label>
                 <input className="input" value={form.doc_url} onChange={e => setForm(f => ({ ...f, doc_url: e.target.value }))} placeholder="https://docs.google.com/..." />
+                <p className="text-xs text-slate-400 mt-1">Paste a Google Docs, Drive, or any document link</p>
               </div>
               <div>
                 <label className="label">Image URL</label>
@@ -253,7 +402,7 @@ export default function IdeationPage() {
               </div>
               <div>
                 <label className="label">Reference Links (one per line)</label>
-                <textarea className="input resize-none text-xs font-mono" rows={3} value={form.reference_links} onChange={e => setForm(f => ({ ...f, reference_links: e.target.value }))} placeholder="https://example.com&#10;https://another.com" />
+                <textarea className="input resize-none text-xs font-mono" rows={3} value={form.reference_links} onChange={e => setForm(f => ({ ...f, reference_links: e.target.value }))} placeholder={"https://example.com\nhttps://another.com"} />
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
@@ -270,9 +419,14 @@ export default function IdeationPage() {
       {reviewModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-modal w-full max-w-sm animate-slide-up">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">Review Idea</h2>
-              <p className="text-sm text-slate-500 truncate">{reviewModal.title}</p>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Review Idea</h2>
+                <p className="text-sm text-slate-500 truncate mt-0.5">{reviewModal.title}</p>
+              </div>
+              <button onClick={() => setReviewModal(null)} className="text-slate-400 hover:text-slate-600 p-1 shrink-0">
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <div className="flex gap-3">
