@@ -1,11 +1,11 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Calendar, CheckCircle, Circle, MessageSquare, Paperclip,
-  Upload, CheckCheck, XCircle, User, Clock, Send, Trash2, ChevronDown,
-  Building2, Share2
+  ArrowLeft, Calendar, CheckCircle, MessageSquare, Link2,
+  Plus, X, CheckCheck, XCircle, Clock, Send, Trash2, ChevronDown,
+  Building2, Share2, ExternalLink
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -32,11 +32,17 @@ export default function TaskDetailPage() {
   const [loading, setLoading] = useState(true)
   const [comment, setComment] = useState('')
   const [commentLoading, setCommentLoading] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [statusChanging, setStatusChanging] = useState(false)
   const [reviewModal, setReviewModal] = useState<{ fileId: string; fileName: string } | null>(null)
   const [reviewComment, setReviewComment] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [showLinkForm, setShowLinkForm] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkName, setLinkName] = useState('')
+  const [submittingLink, setSubmittingLink] = useState(false)
+  const [members, setMembers] = useState<{ id: string; full_name: string }[]>([])
+  const [newCheckItem, setNewCheckItem] = useState('')
+  const [newCheckAssignee, setNewCheckAssignee] = useState('')
+  const [addingCheck, setAddingCheck] = useState(false)
 
   const fetchTask = async () => {
     try {
@@ -51,6 +57,7 @@ export default function TaskDetailPage() {
   }
 
   useEffect(() => { fetchTask() }, [id])
+  useEffect(() => { api.get('/users').then(r => setMembers(r.data.data)).catch(() => {}) }, [])
 
   const handleToggleChecklist = async (checkId: string, current: boolean) => {
     try {
@@ -74,23 +81,29 @@ export default function TaskDetailPage() {
     setCommentLoading(false)
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    const formData = new FormData()
-    formData.append('file', file)
+  const handleLinkSubmit = async () => {
+    if (!linkUrl.trim()) return
+    setSubmittingLink(true)
     try {
-      await api.post(`/tasks/${id}/files`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
-      toast.success('File uploaded — task moved to In Review')
+      await api.post(`/tasks/${id}/links`, { name: linkName, url: linkUrl })
+      toast.success('Link submitted — task moved to In Review')
+      setLinkUrl(''); setLinkName(''); setShowLinkForm(false)
       fetchTask()
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Upload failed')
+      toast.error(err.response?.data?.message || 'Failed to submit link')
     }
-    setUploading(false)
-    if (fileRef.current) fileRef.current.value = ''
+    setSubmittingLink(false)
+  }
+
+  const handleAddChecklist = async () => {
+    if (!newCheckItem.trim()) return
+    setAddingCheck(true)
+    try {
+      await api.post(`/tasks/${id}/checklist`, { item_name: newCheckItem, assigned_to: newCheckAssignee || null })
+      setNewCheckItem(''); setNewCheckAssignee('')
+      fetchTask()
+    } catch { toast.error('Failed to add item') }
+    setAddingCheck(false)
   }
 
   const handleStatusChange = async (newStatus: string) => {
@@ -181,19 +194,24 @@ export default function TaskDetailPage() {
           )}
 
           {/* Checklist */}
-          {task.checklist.length > 0 && (
+          {(task.checklist.length > 0 || isAdmin) && (
             <div className="card p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="section-title">Checklist</h2>
                 <span className="text-xs text-slate-500">{checklistDone}/{task.checklist.length} done</span>
               </div>
-              <div className="w-full bg-slate-100 rounded-full h-1.5 mb-4">
-                <div
-                  className="bg-brand-600 h-1.5 rounded-full transition-all"
-                  style={{ width: task.checklist.length ? `${(checklistDone / task.checklist.length) * 100}%` : '0%' }}
-                />
-              </div>
+              {task.checklist.length > 0 && (
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mb-4">
+                  <div
+                    className="bg-brand-600 h-1.5 rounded-full transition-all"
+                    style={{ width: `${(checklistDone / task.checklist.length) * 100}%` }}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
+                {task.checklist.length === 0 && (
+                  <p className="text-slate-400 text-sm text-center py-2">No checklist items yet.</p>
+                )}
                 {task.checklist.map((item) => (
                   <div key={item.id} className="flex items-center gap-3 py-1.5">
                     <button
@@ -219,69 +237,131 @@ export default function TaskDetailPage() {
                   </div>
                 ))}
               </div>
+              {isAdmin && (
+                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+                  <input
+                    className="input flex-1 text-sm"
+                    value={newCheckItem}
+                    onChange={e => setNewCheckItem(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddChecklist())}
+                    placeholder="Add checklist item..."
+                  />
+                  <select
+                    className="input text-sm"
+                    style={{ width: '9rem' }}
+                    value={newCheckAssignee}
+                    onChange={e => setNewCheckAssignee(e.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddChecklist}
+                    disabled={addingCheck || !newCheckItem.trim()}
+                    className="btn-secondary px-3"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Files */}
+          {/* Links */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="section-title flex items-center gap-2">
-                <Paperclip className="w-4 h-4 text-slate-400" /> Files
+                <Link2 className="w-4 h-4 text-slate-400" /> Links
               </h2>
-              <div>
-                <input ref={fileRef} type="file" className="hidden" onChange={handleFileUpload}
-                  accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.mp4,.mov,.ppt,.pptx,.xls,.xlsx" />
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading}
-                  className="btn-secondary text-xs py-1.5"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  {uploading ? 'Uploading...' : 'Upload File'}
-                </button>
-              </div>
+              <button
+                onClick={() => setShowLinkForm(v => !v)}
+                className="btn-secondary text-xs py-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Link
+              </button>
             </div>
 
+            {showLinkForm && (
+              <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                <input
+                  className="input text-sm"
+                  value={linkName}
+                  onChange={e => setLinkName(e.target.value)}
+                  placeholder="Label (optional) e.g. Google Drive folder"
+                />
+                <div className="flex gap-2">
+                  <input
+                    className="input text-sm flex-1"
+                    value={linkUrl}
+                    onChange={e => setLinkUrl(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    type="url"
+                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleLinkSubmit())}
+                  />
+                  <button
+                    onClick={handleLinkSubmit}
+                    disabled={submittingLink || !linkUrl.trim()}
+                    className="btn-primary text-sm px-4"
+                  >
+                    {submittingLink ? 'Submitting...' : 'Submit'}
+                  </button>
+                  <button
+                    onClick={() => { setShowLinkForm(false); setLinkUrl(''); setLinkName('') }}
+                    className="btn-secondary p-2"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {task.files.length === 0 ? (
-              <p className="text-slate-400 text-sm py-4 text-center">No files uploaded yet.</p>
+              <p className="text-slate-400 text-sm py-4 text-center">No links shared yet.</p>
             ) : (
               <div className="space-y-2">
-                {task.files.map((file) => (
-                  <div key={file.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <div className="flex-1 min-w-0">
-                      <a
-                        href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}${file.file_url}`}
-                        target="_blank" rel="noreferrer"
-                        className="text-sm font-medium text-brand-600 hover:underline truncate block"
-                      >
-                        {file.file_name}
-                      </a>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {fileSize(file.file_size)} · by {file.uploaded_by_name} · {formatDate(file.uploaded_at)}
-                      </p>
-                      {file.review_comment && (
-                        <p className="text-xs text-slate-500 mt-1 italic">"{file.review_comment}"</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={cn('badge text-xs', {
-                        'bg-amber-50 text-amber-700': file.review_status === 'pending',
-                        'bg-green-50 text-green-700': file.review_status === 'accepted',
-                        'bg-red-50 text-red-700': file.review_status === 'rejected',
-                      })}>
-                        {file.review_status}
-                      </span>
-                      {isAdmin && file.review_status === 'pending' && (
-                        <button
-                          onClick={() => setReviewModal({ fileId: file.id, fileName: file.file_name })}
-                          className="text-xs text-brand-600 hover:text-brand-700 font-semibold"
+                {task.files.map((file) => {
+                  const href = file.file_url.startsWith('http')
+                    ? file.file_url
+                    : `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}${file.file_url}`
+                  return (
+                    <div key={file.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                      <div className="flex-1 min-w-0">
+                        <a
+                          href={href}
+                          target="_blank" rel="noreferrer"
+                          className="text-sm font-medium text-brand-600 hover:underline truncate flex items-center gap-1.5"
                         >
-                          Review
-                        </button>
-                      )}
+                          <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                          {file.file_name}
+                        </a>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {file.file_type === 'link' ? 'Shared link' : fileSize(file.file_size)} · by {file.uploaded_by_name} · {formatDate(file.uploaded_at)}
+                        </p>
+                        {file.review_comment && (
+                          <p className="text-xs text-slate-500 mt-1 italic">"{file.review_comment}"</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={cn('badge text-xs', {
+                          'bg-amber-50 text-amber-700': file.review_status === 'pending',
+                          'bg-green-50 text-green-700': file.review_status === 'accepted',
+                          'bg-red-50 text-red-700': file.review_status === 'rejected',
+                        })}>
+                          {file.review_status}
+                        </span>
+                        {isAdmin && file.review_status === 'pending' && (
+                          <button
+                            onClick={() => setReviewModal({ fileId: file.id, fileName: file.file_name })}
+                            className="text-xs text-brand-600 hover:text-brand-700 font-semibold"
+                          >
+                            Review
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -432,7 +512,7 @@ export default function TaskDetailPage() {
               <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5" /> Created {formatDate(task.created_at)}</div>
               <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5" /> Updated {formatDate(task.updated_at)}</div>
               <div className="flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5" /> {task.comments.length} comment{task.comments.length !== 1 ? 's' : ''}</div>
-              <div className="flex items-center gap-2"><Paperclip className="w-3.5 h-3.5" /> {task.files.length} file{task.files.length !== 1 ? 's' : ''}</div>
+              <div className="flex items-center gap-2"><Link2 className="w-3.5 h-3.5" /> {task.files.length} link{task.files.length !== 1 ? 's' : ''}</div>
             </div>
           </div>
         </div>

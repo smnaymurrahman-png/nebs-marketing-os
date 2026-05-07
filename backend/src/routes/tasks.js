@@ -60,6 +60,43 @@ router.post('/:id/files', authenticate, upload.single('file'), async (req, res) 
   }
 });
 
+// Submit a link (replaces file upload)
+router.post('/:id/links', authenticate, async (req, res) => {
+  try {
+    const { name, url } = req.body;
+    if (!url?.trim()) return res.status(400).json({ success: false, message: 'Link URL is required' });
+    const fileId = uuidv4();
+    await pool.query(
+      'INSERT INTO task_files (id, task_id, file_name, file_url, file_type, file_size, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [fileId, req.params.id, name?.trim() || url.trim(), url.trim(), 'link', 0, req.user.id]
+    );
+    await pool.query("UPDATE tasks SET status = 'in_review', updated_at = NOW() WHERE id = $1", [req.params.id]);
+    res.status(201).json({ success: true, data: { id: fileId } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to submit link' });
+  }
+});
+
+// Add a checklist item to an existing task
+router.post('/:id/checklist', authenticate, async (req, res) => {
+  try {
+    const { item_name, assigned_to } = req.body;
+    if (!item_name?.trim()) return res.status(400).json({ success: false, message: 'Item name is required' });
+    const { rows } = await pool.query(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 as next_order FROM task_checklist WHERE task_id = $1',
+      [req.params.id]
+    );
+    const checkId = uuidv4();
+    await pool.query(
+      'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, sort_order) VALUES ($1, $2, $3, $4, $5)',
+      [checkId, req.params.id, item_name.trim(), assigned_to || null, rows[0].next_order]
+    );
+    res.status(201).json({ success: true, data: { id: checkId } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to add checklist item' });
+  }
+});
+
 // Review file (admin)
 router.put('/:taskId/files/:fileId/review', authenticate, requireAdmin, async (req, res) => {
   try {

@@ -43,6 +43,9 @@ export default function NewTaskPage() {
   const [selectedVentures, setSelectedVentures] = useState<string[]>([])
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([])
   const [metaExpanded, setMetaExpanded] = useState(false)
+  const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
+  const [pendingDate, setPendingDate] = useState('')
+  const [pendingTime, setPendingTime] = useState('')
 
   useEffect(() => {
     api.get('/users').then(res => setMembers(res.data.data)).catch(() => {})
@@ -153,14 +156,74 @@ export default function NewTaskPage() {
                 <option value="urgent">Urgent</option>
               </select>
             </div>
-            <div>
+            <div className="relative">
               <label className="label">Deadline</label>
-              <input
-                type="datetime-local"
-                className="input"
-                value={form.deadline}
-                onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))}
-              />
+              <button
+                type="button"
+                onClick={() => {
+                  const [d, t] = form.deadline ? form.deadline.split('T') : ['', '']
+                  setPendingDate(d); setPendingTime(t || '09:00')
+                  setShowDeadlinePicker(true)
+                }}
+                className={cn('input w-full text-left font-normal', !form.deadline && 'text-slate-400')}
+              >
+                {form.deadline
+                  ? new Date(form.deadline).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+                  : 'Pick a deadline...'}
+              </button>
+              {form.deadline && (
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, deadline: '' }))}
+                  className="absolute right-2.5 top-8 text-slate-300 hover:text-slate-500"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {showDeadlinePicker && (
+                <div className="absolute z-20 top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg p-4 w-72">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="label text-xs">Date</label>
+                      <input
+                        type="date"
+                        className="input"
+                        value={pendingDate}
+                        onChange={e => setPendingDate(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Time</label>
+                      <input
+                        type="time"
+                        className="input"
+                        value={pendingTime}
+                        onChange={e => setPendingTime(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowDeadlinePicker(false)}
+                        className="btn-secondary flex-1"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!pendingDate}
+                        onClick={() => {
+                          if (pendingDate) setForm(f => ({ ...f, deadline: `${pendingDate}T${pendingTime || '00:00'}` }))
+                          setShowDeadlinePicker(false)
+                        }}
+                        className="btn-primary flex-1"
+                      >
+                        OK
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
