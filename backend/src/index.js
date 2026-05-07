@@ -8,8 +8,10 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
 
-// Create upload directory
-const uploadDir = process.env.UPLOAD_DIR || 'uploads';
+// Create upload directory (absolute path so it's CWD-independent)
+const uploadDir = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Middleware
@@ -34,7 +36,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Static files (uploads)
-app.use('/uploads', express.static(path.join(__dirname, '..', uploadDir)));
+app.use('/uploads', express.static(uploadDir));
 
 // Health check
 app.get('/api/health', (req, res) => {

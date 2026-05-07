@@ -9,9 +9,14 @@ const {
 } = require('../controllers/tasksController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
+// Absolute upload path — consistent with index.js regardless of CWD
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, '..', '..', 'uploads');
+
 // File upload config
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, process.env.UPLOAD_DIR || 'uploads'),
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
     const unique = uuidv4();
     cb(null, `${unique}${path.extname(file.originalname)}`);
