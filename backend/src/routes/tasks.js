@@ -77,6 +77,31 @@ router.post('/:id/links', authenticate, async (req, res) => {
   }
 });
 
+// Add assignee (admin only)
+router.post('/:id/assignees', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    if (!user_id) return res.status(400).json({ success: false, message: 'user_id required' });
+    await pool.query(
+      'INSERT INTO task_assignments (id, task_id, user_id) VALUES ($1, $2, $3) ON CONFLICT (task_id, user_id) DO NOTHING',
+      [uuidv4(), req.params.id, user_id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Remove assignee (admin only)
+router.delete('/:id/assignees/:userId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM task_assignments WHERE task_id = $1 AND user_id = $2', [req.params.id, req.params.userId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // Add a checklist item to an existing task
 router.post('/:id/checklist', authenticate, async (req, res) => {
   try {
