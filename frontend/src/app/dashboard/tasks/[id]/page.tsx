@@ -479,19 +479,15 @@ export default function TaskDetailPage() {
           {/* Status */}
           <div className="card p-4">
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Status</h3>
-            {isAdmin ? (
-              <div className="relative">
-                <select value={task.status} onChange={(e) => handleStatusChange(e.target.value)}
-                  disabled={statusChanging} className="input w-full appearance-none pr-8">
-                  {ALL_STATUSES.map(s => (
-                    <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-            ) : (
-              <span className={cn('badge text-sm px-3 py-1', statusCfg.bg, statusCfg.color)}>{statusCfg.label}</span>
-            )}
+            <div className="relative">
+              <select value={task.status} onChange={(e) => handleStatusChange(e.target.value)}
+                disabled={statusChanging} className="input w-full appearance-none pr-8">
+                {ALL_STATUSES.map(s => (
+                  <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
           {/* Priority */}

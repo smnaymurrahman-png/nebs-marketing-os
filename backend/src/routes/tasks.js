@@ -37,7 +37,7 @@ router.get('/stats', authenticate, getTaskStats);
 router.get('/my-tasks', authenticate, getMyTasks);
 router.get('/', authenticate, getTasks);
 router.get('/:id', authenticate, getTask);
-router.post('/', authenticate, requireAdmin, createTask);
+router.post('/', authenticate, createTask);
 router.put('/:id', authenticate, updateTask);
 router.delete('/:id', authenticate, requireAdmin, deleteTask);
 router.post('/:id/comments', authenticate, addComment);
