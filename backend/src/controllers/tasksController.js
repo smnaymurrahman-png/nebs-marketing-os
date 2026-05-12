@@ -168,8 +168,8 @@ const createTask = async (req, res) => {
         const item = checklist[i];
         const checkId = uuidv4();
         await pool.query(
-          'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, sort_order) VALUES ($1, $2, $3, $4, $5)',
-          [checkId, taskId, item.item_name, item.assigned_to || null, i]
+          'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, deadline, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
+          [checkId, taskId, item.item_name, item.assigned_to || null, item.deadline || null, i]
         );
 
         if (item.assigned_to) {

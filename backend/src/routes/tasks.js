@@ -138,7 +138,7 @@ router.delete('/:id/assignees/:userId', authenticate, requireAdmin, async (req, 
 // Add a checklist item to an existing task
 router.post('/:id/checklist', authenticate, async (req, res) => {
   try {
-    const { item_name, assigned_to } = req.body;
+    const { item_name, assigned_to, deadline } = req.body;
     if (!item_name?.trim()) return res.status(400).json({ success: false, message: 'Item name is required' });
     const { rows } = await pool.query(
       'SELECT COALESCE(MAX(sort_order), -1) + 1 as next_order FROM task_checklist WHERE task_id = $1',
@@ -146,8 +146,8 @@ router.post('/:id/checklist', authenticate, async (req, res) => {
     );
     const checkId = uuidv4();
     await pool.query(
-      'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, sort_order) VALUES ($1, $2, $3, $4, $5)',
-      [checkId, req.params.id, item_name.trim(), assigned_to || null, rows[0].next_order]
+      'INSERT INTO task_checklist (id, task_id, item_name, assigned_to, deadline, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
+      [checkId, req.params.id, item_name.trim(), assigned_to || null, deadline || null, rows[0].next_order]
     );
     res.status(201).json({ success: true, data: { id: checkId } });
   } catch (error) {

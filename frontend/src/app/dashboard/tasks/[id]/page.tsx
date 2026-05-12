@@ -58,6 +58,7 @@ export default function TaskDetailPage() {
   // Checklist add
   const [newCheckItem, setNewCheckItem] = useState('')
   const [newCheckAssignee, setNewCheckAssignee] = useState('')
+  const [newCheckDeadline, setNewCheckDeadline] = useState('')
   const [addingCheck, setAddingCheck] = useState(false)
 
   // Edit modal
@@ -128,8 +129,8 @@ export default function TaskDetailPage() {
     if (!newCheckItem.trim()) return
     setAddingCheck(true)
     try {
-      await api.post(`/tasks/${id}/checklist`, { item_name: newCheckItem, assigned_to: newCheckAssignee || null })
-      setNewCheckItem(''); setNewCheckAssignee('')
+      await api.post(`/tasks/${id}/checklist`, { item_name: newCheckItem, assigned_to: newCheckAssignee || null, deadline: newCheckDeadline || null })
+      setNewCheckItem(''); setNewCheckAssignee(''); setNewCheckDeadline('')
       fetchTask()
     } catch { toast.error('Failed to add item') }
     setAddingCheck(false)
@@ -312,9 +313,20 @@ export default function TaskDetailPage() {
                       <p className={cn('text-sm', item.is_completed ? 'line-through text-slate-400' : 'text-slate-800')}>
                         {item.item_name}
                       </p>
-                      {item.assigned_to_name && (
-                        <p className="text-xs text-slate-400 mt-0.5">→ {item.assigned_to_name}</p>
-                      )}
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {item.assigned_to_name && (
+                          <p className="text-xs text-slate-400">→ {item.assigned_to_name}</p>
+                        )}
+                        {item.deadline && (
+                          <span className={cn(
+                            'text-xs font-medium flex items-center gap-1',
+                            item.is_completed ? 'text-slate-300' : deadlineColor(item.deadline, 'ongoing')
+                          )}>
+                            <Clock className="w-3 h-3" />
+                            {formatDate(item.deadline)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {item.is_completed && item.completed_at && (
                       <span className="text-xs text-slate-300 shrink-0">{formatDate(item.completed_at)}</span>
@@ -323,31 +335,42 @@ export default function TaskDetailPage() {
                 ))}
               </div>
               {isAdmin && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
-                  <input
-                    className="input flex-1 text-sm"
-                    value={newCheckItem}
-                    onChange={e => setNewCheckItem(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddChecklist())}
-                    placeholder="Add checklist item..."
-                  />
-                  <select
-                    className="input text-sm"
-                    style={{ width: '9rem' }}
-                    value={newCheckAssignee}
-                    onChange={e => setNewCheckAssignee(e.target.value)}
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleAddChecklist}
-                    disabled={addingCheck || !newCheckItem.trim()}
-                    className="btn-secondary px-3"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 text-sm"
+                      value={newCheckItem}
+                      onChange={e => setNewCheckItem(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddChecklist())}
+                      placeholder="Add checklist item..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddChecklist}
+                      disabled={addingCheck || !newCheckItem.trim()}
+                      className="btn-secondary px-3"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      className="input text-sm flex-1"
+                      value={newCheckAssignee}
+                      onChange={e => setNewCheckAssignee(e.target.value)}
+                    >
+                      <option value="">Unassigned</option>
+                      {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                    </select>
+                    <input
+                      type="date"
+                      className="input text-sm"
+                      style={{ width: '10rem' }}
+                      value={newCheckDeadline}
+                      onChange={e => setNewCheckDeadline(e.target.value)}
+                      title="Deadline for this item"
+                    />
+                  </div>
                 </div>
               )}
             </div>

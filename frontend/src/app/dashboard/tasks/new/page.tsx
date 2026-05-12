@@ -13,7 +13,7 @@ interface Member {
 }
 
 interface ChecklistItem {
-  item_name: string; assigned_to: string
+  item_name: string; assigned_to: string; deadline: string
 }
 
 const VENTURES = ['Nebs-IT', 'Nebs-Dev', 'Nebs-Creative', 'Nebs-Connect']
@@ -70,7 +70,7 @@ export default function NewTaskPage() {
 
   const addChecklistItem = () => {
     if (!newCheckItem.trim()) return
-    setChecklist(prev => [...prev, { item_name: newCheckItem.trim(), assigned_to: '' }])
+    setChecklist(prev => [...prev, { item_name: newCheckItem.trim(), assigned_to: '', deadline: '' }])
     setNewCheckItem('')
   }
 
@@ -94,7 +94,8 @@ export default function NewTaskPage() {
         platforms: selectedPlatforms,
         checklist: checklist.filter(c => c.item_name).map(c => ({
           item_name: c.item_name,
-          assigned_to: c.assigned_to || null
+          assigned_to: c.assigned_to || null,
+          deadline: c.deadline || null
         }))
       }
       const res = await api.post('/tasks', payload)
@@ -413,27 +414,38 @@ export default function NewTaskPage() {
 
           <div className="space-y-2 mb-3">
             {checklist.map((item, i) => (
-              <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
-                <div className="w-4 h-4 rounded border-2 border-slate-300 shrink-0" />
-                <input
-                  className="flex-1 text-sm bg-transparent border-none outline-none text-slate-800"
-                  value={item.item_name}
-                  onChange={e => updateChecklistItem(i, 'item_name', e.target.value)}
-                  placeholder="Checklist item"
-                />
-                <select
-                  className="text-xs border border-slate-200 rounded-md px-2 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                  value={item.assigned_to}
-                  onChange={e => updateChecklistItem(i, 'assigned_to', e.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>{m.full_name}</option>
-                  ))}
-                </select>
-                <button type="button" onClick={() => removeChecklistItem(i)} className="text-slate-300 hover:text-red-400 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
+              <div key={i} className="flex flex-col gap-1.5 p-3 bg-slate-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded border-2 border-slate-300 shrink-0" />
+                  <input
+                    className="flex-1 text-sm bg-transparent border-none outline-none text-slate-800"
+                    value={item.item_name}
+                    onChange={e => updateChecklistItem(i, 'item_name', e.target.value)}
+                    placeholder="Checklist item"
+                  />
+                  <button type="button" onClick={() => removeChecklistItem(i)} className="text-slate-300 hover:text-red-400 transition-colors shrink-0">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 pl-6">
+                  <select
+                    className="text-xs border border-slate-200 rounded-md px-2 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 flex-1"
+                    value={item.assigned_to}
+                    onChange={e => updateChecklistItem(i, 'assigned_to', e.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map(m => (
+                      <option key={m.id} value={m.id}>{m.full_name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    className="text-xs border border-slate-200 rounded-md px-2 py-1 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    value={item.deadline}
+                    onChange={e => updateChecklistItem(i, 'deadline', e.target.value)}
+                    title="Deadline for this item"
+                  />
+                </div>
               </div>
             ))}
           </div>

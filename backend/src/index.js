@@ -243,6 +243,7 @@ async function runMigrationsAndSeed() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       FOREIGN KEY (submitted_by) REFERENCES users(id) ON DELETE CASCADE
     )`,
+    `ALTER TABLE task_checklist ADD COLUMN IF NOT EXISTS deadline TIMESTAMP WITH TIME ZONE DEFAULT NULL`,
     `CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL,
