@@ -19,4 +19,14 @@ async function createBulkNotifications(userIds, { title, message, type, referenc
   }
 }
 
-module.exports = { createNotification, createBulkNotifications };
+async function getAdminUsers(excludeId = null) {
+  const { rows } = await pool.query(
+    `SELECT id, full_name, work_email FROM users
+     WHERE access_level IN ('admin','super_admin') AND is_active = TRUE
+     ${excludeId ? 'AND id != $1' : ''}`,
+    excludeId ? [excludeId] : []
+  );
+  return rows;
+}
+
+module.exports = { createNotification, createBulkNotifications, getAdminUsers };

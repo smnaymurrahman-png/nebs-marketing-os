@@ -8,6 +8,8 @@ const {
   addComment, updateChecklist, getTaskStats
 } = require('../controllers/tasksController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { createNotification, getAdminUsers } = require('../utils/notifications');
+const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
 
 // Absolute upload path — consistent with index.js regardless of CWD
 const UPLOAD_DIR = process.env.UPLOAD_DIR
@@ -54,6 +56,15 @@ router.post('/:id/files', authenticate, upload.single('file'), async (req, res) 
       [fileId, req.params.id, req.file.originalname, fileUrl, req.file.mimetype, req.file.size, req.user.id]
     );
     await pool.query("UPDATE tasks SET status = 'in_review', updated_at = NOW() WHERE id = $1", [req.params.id]);
+
+    const { rows: taskRows } = await pool.query('SELECT title FROM tasks WHERE id = $1', [req.params.id]);
+    const taskTitle = taskRows[0]?.title || 'a task';
+    const admins = await getAdminUsers(req.user.id);
+    for (const admin of admins) {
+      await createNotification({ userId: admin.id, title: 'File Submitted for Review', message: `${req.user.full_name} uploaded "${req.file.originalname}" on "${taskTitle}"`, type: 'task', referenceId: req.params.id });
+    }
+    await sendBulkEmail(admins, (adminName) => emailTemplates.taskSubmitted(adminName, req.user.full_name, taskTitle, req.file.originalname, req.params.id));
+
     res.status(201).json({ success: true, data: { id: fileId, file_url: fileUrl } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Upload failed' });
@@ -65,12 +76,22 @@ router.post('/:id/links', authenticate, async (req, res) => {
   try {
     const { name, url } = req.body;
     if (!url?.trim()) return res.status(400).json({ success: false, message: 'Link URL is required' });
+    const fileName = name?.trim() || url.trim();
     const fileId = uuidv4();
     await pool.query(
       'INSERT INTO task_files (id, task_id, file_name, file_url, file_type, file_size, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [fileId, req.params.id, name?.trim() || url.trim(), url.trim(), 'link', 0, req.user.id]
+      [fileId, req.params.id, fileName, url.trim(), 'link', 0, req.user.id]
     );
     await pool.query("UPDATE tasks SET status = 'in_review', updated_at = NOW() WHERE id = $1", [req.params.id]);
+
+    const { rows: taskRows } = await pool.query('SELECT title FROM tasks WHERE id = $1', [req.params.id]);
+    const taskTitle = taskRows[0]?.title || 'a task';
+    const admins = await getAdminUsers(req.user.id);
+    for (const admin of admins) {
+      await createNotification({ userId: admin.id, title: 'Link Submitted for Review', message: `${req.user.full_name} submitted "${fileName}" on "${taskTitle}"`, type: 'task', referenceId: req.params.id });
+    }
+    await sendBulkEmail(admins, (adminName) => emailTemplates.taskSubmitted(adminName, req.user.full_name, taskTitle, fileName, req.params.id));
+
     res.status(201).json({ success: true, data: { id: fileId } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to submit link' });
@@ -86,6 +107,18 @@ router.post('/:id/assignees', authenticate, requireAdmin, async (req, res) => {
       'INSERT INTO task_assignments (id, task_id, user_id) VALUES ($1, $2, $3) ON CONFLICT (task_id, user_id) DO NOTHING',
       [uuidv4(), req.params.id, user_id]
     );
+
+    const [{ rows: taskRows }, { rows: userRows }] = await Promise.all([
+      pool.query('SELECT title, deadline FROM tasks WHERE id = $1', [req.params.id]),
+      pool.query('SELECT full_name, work_email FROM users WHERE id = $1', [user_id]),
+    ]);
+    if (taskRows.length && userRows.length) {
+      const { title, deadline } = taskRows[0];
+      const { full_name, work_email } = userRows[0];
+      await createNotification({ userId: user_id, title: 'New Task Assigned', message: `You've been assigned: "${title}"`, type: 'task', referenceId: req.params.id });
+      await sendEmail(work_email, emailTemplates.assigneeAdded(full_name, title, deadline, req.params.id));
+    }
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -126,6 +159,12 @@ router.post('/:id/checklist', authenticate, async (req, res) => {
 router.put('/:taskId/files/:fileId/review', authenticate, requireAdmin, async (req, res) => {
   try {
     const { review_status, review_comment } = req.body;
+
+    const { rows: fileRows } = await pool.query(
+      'SELECT tf.file_name, tf.uploaded_by, u.full_name as uploader_name, u.work_email as uploader_email FROM task_files tf JOIN users u ON tf.uploaded_by = u.id WHERE tf.id = $1 AND tf.task_id = $2',
+      [req.params.fileId, req.params.taskId]
+    );
+
     await pool.query(
       'UPDATE task_files SET review_status = $1, review_comment = $2, reviewed_by = $3, reviewed_at = NOW() WHERE id = $4 AND task_id = $5',
       [review_status, review_comment || null, req.user.id, req.params.fileId, req.params.taskId]
@@ -133,6 +172,15 @@ router.put('/:taskId/files/:fileId/review', authenticate, requireAdmin, async (r
 
     const newStatus = review_status === 'accepted' ? 'approved' : 'in_revision';
     await pool.query("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", [newStatus, req.params.taskId]);
+
+    if (fileRows.length) {
+      const { file_name, uploaded_by, uploader_name, uploader_email } = fileRows[0];
+      const { rows: taskRows } = await pool.query('SELECT title FROM tasks WHERE id = $1', [req.params.taskId]);
+      const taskTitle = taskRows[0]?.title || 'a task';
+      const statusLabel = review_status === 'accepted' ? 'Approved' : 'Needs Revision';
+      await createNotification({ userId: uploaded_by, title: `File ${statusLabel}`, message: `"${file_name}" on "${taskTitle}" was ${review_status === 'accepted' ? 'approved' : 'sent for revision'}${review_comment ? ': ' + review_comment : ''}`, type: 'task', referenceId: req.params.taskId });
+      await sendEmail(uploader_email, emailTemplates.fileReviewed(uploader_name, taskTitle, file_name, review_status, review_comment, req.params.taskId));
+    }
 
     res.json({ success: true, message: `File ${review_status}` });
   } catch (error) {

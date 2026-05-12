@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
-const { createNotification } = require('../utils/notifications');
+const { createNotification, getAdminUsers } = require('../utils/notifications');
+const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
 
 // GET /api/ideas
 const getIdeas = async (req, res) => {
@@ -68,16 +69,11 @@ const createIdea = async (req, res) => {
         reference_links ? JSON.stringify(reference_links) : null, req.user.id]
     );
 
-    const { rows: admins } = await pool.query(
-      "SELECT id FROM users WHERE access_level IN ('admin','super_admin') AND is_active = TRUE AND id != $1",
-      [req.user.id]
-    );
+    const admins = await getAdminUsers(req.user.id);
     for (const admin of admins) {
-      await createNotification({
-        userId: admin.id, title: 'New Idea Submitted',
-        message: `${req.user.full_name} submitted: "${title}"`, type: 'idea', referenceId: id
-      });
+      await createNotification({ userId: admin.id, title: 'New Idea Submitted', message: `${req.user.full_name} submitted: "${title}"`, type: 'idea', referenceId: id });
     }
+    await sendBulkEmail(admins, (adminName) => emailTemplates.ideaSubmitted(adminName, req.user.full_name, title));
 
     res.status(201).json({ success: true, message: 'Idea submitted', data: { id } });
   } catch (error) {
@@ -151,6 +147,11 @@ const reviewIdea = async (req, res) => {
       message: `Your idea "${idea.title}" was ${status}${admin_comment ? ': ' + admin_comment : ''}`,
       type: 'idea', referenceId: idea.id
     });
+
+    const { rows: submitterRows } = await pool.query('SELECT full_name, work_email FROM users WHERE id = $1', [idea.submitted_by]);
+    if (submitterRows.length) {
+      await sendEmail(submitterRows[0].work_email, emailTemplates.ideaReviewed(submitterRows[0].full_name, idea.title, status, admin_comment));
+    }
 
     res.json({ success: true, message: `Idea ${status}` });
   } catch (error) {

@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
-const { createNotification } = require('../utils/notifications');
+const { createNotification, getAdminUsers } = require('../utils/notifications');
+const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
 
 // GET /api/meetings
 const getMeetings = async (req, res) => {
@@ -97,17 +98,11 @@ const createMeeting = async (req, res) => {
       }
     }
 
-    const { rows: admins } = await pool.query(
-      "SELECT id FROM users WHERE access_level IN ('admin','super_admin') AND is_active = TRUE AND id != $1",
-      [req.user.id]
-    );
+    const admins = await getAdminUsers(req.user.id);
     for (const admin of admins) {
-      await createNotification({
-        userId: admin.id, title: 'Meeting Request',
-        message: `${req.user.full_name} requested a meeting: "${topic}"`,
-        type: 'meeting', referenceId: id
-      });
+      await createNotification({ userId: admin.id, title: 'Meeting Request', message: `${req.user.full_name} requested a meeting: "${topic}"`, type: 'meeting', referenceId: id });
     }
+    await sendBulkEmail(admins, (adminName) => emailTemplates.meetingRequested(adminName, req.user.full_name, topic, meeting_date, meeting_time, priority));
 
     res.status(201).json({ success: true, message: 'Meeting requested', data: { id } });
   } catch (error) {
@@ -180,6 +175,14 @@ const reviewMeeting = async (req, res) => {
       message: `Your meeting "${meeting.topic}" was ${status}`,
       type: 'meeting', referenceId: meeting.id
     });
+
+    const { rows: requesterRows } = await pool.query('SELECT full_name, work_email FROM users WHERE id = $1', [meeting.requested_by]);
+    if (requesterRows.length) {
+      await sendEmail(
+        requesterRows[0].work_email,
+        emailTemplates.meetingReviewed(requesterRows[0].full_name, meeting.topic, status, admin_comment, meeting.meeting_date, meeting.meeting_time)
+      );
+    }
 
     res.json({ success: true, message: `Meeting ${status}` });
   } catch (error) {

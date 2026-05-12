@@ -288,6 +288,8 @@ async function runMigrationsAndSeed() {
 async function start() {
   await testConnection();
   await runMigrationsAndSeed();
+  const { verifyEmailConfig } = require('./utils/email');
+  await verifyEmailConfig();
   app.listen(PORT, () => {
     console.log(`\n🚀 Nebs Marketing OS API running on http://localhost:${PORT}`);
     console.log(`📚 Health check: http://localhost:${PORT}/api/health\n`);

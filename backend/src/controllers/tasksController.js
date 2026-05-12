@@ -1,7 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
-const { createNotification } = require('../utils/notifications');
-const { sendEmail, emailTemplates } = require('../utils/email');
+const { createNotification, getAdminUsers } = require('../utils/notifications');
+const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
 
 // GET /api/tasks
 const getTasks = async (req, res) => {
@@ -173,13 +173,21 @@ const createTask = async (req, res) => {
         );
 
         if (item.assigned_to) {
-          const { rows: cu } = await pool.query('SELECT full_name FROM users WHERE id = $1', [item.assigned_to]);
+          const { rows: cu } = await pool.query('SELECT full_name, work_email FROM users WHERE id = $1', [item.assigned_to]);
           if (cu.length) {
             await createNotification({ userId: item.assigned_to, title: 'Sub-task Assigned', message: `${item.item_name} — ${title}`, type: 'task', referenceId: taskId });
+            await sendEmail(cu[0].work_email, emailTemplates.taskAssigned(cu[0].full_name, `${item.item_name} (${title})`, deadline));
           }
         }
       }
     }
+
+    // Notify all admins/super_admins about the new task
+    const admins = await getAdminUsers(req.user.id);
+    for (const admin of admins) {
+      await createNotification({ userId: admin.id, title: 'New Task Created', message: `${req.user.full_name} created: "${title}"`, type: 'task', referenceId: taskId });
+    }
+    await sendBulkEmail(admins, (adminName) => emailTemplates.taskCreated(adminName, req.user.full_name, title, priority, deadline, taskId));
 
     res.status(201).json({ success: true, message: 'Task created successfully', data: { id: taskId } });
   } catch (error) {
@@ -187,6 +195,8 @@ const createTask = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
+
+const STATUS_LABELS = { new: 'New', todo: 'To Do', ongoing: 'Ongoing', in_review: 'In Review', in_revision: 'In Revision', approved: 'Approved', posted: 'Posted' };
 
 // PUT /api/tasks/:id
 const updateTask = async (req, res) => {
@@ -212,6 +222,21 @@ const updateTask = async (req, res) => {
         id
       ]
     );
+
+    if (status && status !== t.status) {
+      const taskTitle = title || t.title;
+      const oldLabel = STATUS_LABELS[t.status] || t.status;
+      const newLabel = STATUS_LABELS[status] || status;
+      const { rows: assignees } = await pool.query(
+        'SELECT u.id, u.full_name, u.work_email FROM task_assignments ta JOIN users u ON ta.user_id = u.id WHERE ta.task_id = $1',
+        [id]
+      );
+      for (const u of assignees) {
+        if (u.id === req.user.id) continue;
+        await createNotification({ userId: u.id, title: 'Task Status Updated', message: `"${taskTitle}" is now ${newLabel}`, type: 'task', referenceId: id });
+        await sendEmail(u.work_email, emailTemplates.taskStatusChanged(u.full_name, taskTitle, oldLabel, newLabel, id));
+      }
+    }
 
     res.json({ success: true, message: 'Task updated successfully' });
   } catch (error) {
