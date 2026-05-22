@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 interface Idea {
   id: string; title: string; description: string; doc_url?: string
   image_url?: string; reference_links?: any; status: string
+  ideation_for?: string; content_type?: string; work_status?: string; backlog?: string
   submitted_by: string; submitted_by_name: string; admin_comment?: string
   reviewed_by_name?: string; reviewed_at?: string; created_at: string
 }
@@ -18,6 +19,16 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string; ico
   approved: { label: 'Approved', color: 'text-green-700',  bg: 'bg-green-50',  icon: CheckCircle },
   rejected: { label: 'Rejected', color: 'text-red-700',    bg: 'bg-red-50',    icon: XCircle },
 }
+
+const WORK_STATUS = [
+  { value: 'not_started', label: 'Not Started', color: 'bg-slate-100 text-slate-600' },
+  { value: 'in_progress', label: 'In Progress', color: 'bg-blue-100 text-blue-700' },
+  { value: 'on_hold',     label: 'On Hold',     color: 'bg-amber-100 text-amber-700' },
+  { value: 'completed',   label: 'Completed',   color: 'bg-green-600 text-white' },
+]
+const workStatusCfg = (v?: string) => WORK_STATUS.find(w => w.value === v) || WORK_STATUS[0]
+
+const CONTENT_TYPES = ['Static', 'Video', 'Reels', 'Carousel', 'Story', 'Blog', 'Ad', 'Other']
 
 function normalizeUrl(url: string) {
   if (!url) return url
@@ -32,6 +43,11 @@ function parseRefs(raw: any): string[] {
     try { return JSON.parse(raw) } catch { return raw.split('\n').filter(Boolean) }
   }
   return []
+}
+
+const emptyForm = {
+  title: '', description: '', doc_url: '', image_url: '', reference_links: '',
+  ideation_for: '', content_type: '', work_status: 'not_started', backlog: '',
 }
 
 export default function IdeationPage() {
@@ -49,7 +65,7 @@ export default function IdeationPage() {
   const [reviewComment, setReviewComment] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [form, setForm] = useState({ title: '', description: '', doc_url: '', image_url: '', reference_links: '' })
+  const [form, setForm] = useState(emptyForm)
 
   const fetchIdeas = async () => {
     setLoading(true)
@@ -65,19 +81,28 @@ export default function IdeationPage() {
 
   const openCreate = () => {
     setEditIdea(null)
-    setForm({ title: '', description: '', doc_url: '', image_url: '', reference_links: '' })
+    setForm(emptyForm)
     setShowModal(true)
   }
 
   const openEdit = (idea: Idea) => {
     setEditIdea(idea)
-    const refs = parseRefs(idea.reference_links).join('\n')
-    setForm({ title: idea.title, description: idea.description || '', doc_url: idea.doc_url || '', image_url: idea.image_url || '', reference_links: refs })
+    setForm({
+      title: idea.title,
+      description: idea.description || '',
+      doc_url: idea.doc_url || '',
+      image_url: idea.image_url || '',
+      reference_links: parseRefs(idea.reference_links).join('\n'),
+      ideation_for: idea.ideation_for || '',
+      content_type: idea.content_type || '',
+      work_status: idea.work_status || 'not_started',
+      backlog: idea.backlog || '',
+    })
     setShowModal(true)
   }
 
   const handleSave = async () => {
-    if (!form.title.trim()) { toast.error('Title is required'); return }
+    if (!form.title.trim()) { toast.error('Ideation topic is required'); return }
     setSaving(true)
     try {
       const payload = {
@@ -87,10 +112,10 @@ export default function IdeationPage() {
       }
       if (editIdea) {
         await api.put(`/ideas/${editIdea.id}`, payload)
-        toast.success('Idea updated')
+        toast.success('Ideation updated')
       } else {
         await api.post('/ideas', payload)
-        toast.success('Idea submitted!')
+        toast.success('Ideation submitted!')
       }
       setShowModal(false)
       fetchIdeas()
@@ -101,38 +126,56 @@ export default function IdeationPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this idea?')) return
+    if (!confirm('Delete this ideation row?')) return
     try {
       await api.delete(`/ideas/${id}`)
-      toast.success('Idea deleted')
+      toast.success('Ideation deleted')
       fetchIdeas()
     } catch { toast.error('Failed to delete') }
+  }
+
+  const handleWorkStatus = async (idea: Idea, work_status: string) => {
+    const prev = idea.work_status
+    setIdeas(list => list.map(i => i.id === idea.id ? { ...i, work_status } : i))
+    try {
+      await api.put(`/ideas/${idea.id}`, { work_status })
+    } catch (err: any) {
+      setIdeas(list => list.map(i => i.id === idea.id ? { ...i, work_status: prev } : i))
+      toast.error(err.response?.data?.message || 'Failed to update status')
+    }
   }
 
   const handleReview = async () => {
     if (!reviewModal) return
     try {
       await api.put(`/ideas/${reviewModal.id}/review`, { status: reviewStatus, admin_comment: reviewComment || null })
-      toast.success(`Idea ${reviewStatus}`)
+      toast.success(`Ideation ${reviewStatus}`)
       setReviewModal(null)
       setReviewComment('')
       fetchIdeas()
     } catch { toast.error('Review failed') }
   }
 
+  const canManage = (idea: Idea) => isAdmin || idea.submitted_by === user?.id
+
+  const COLS = [
+    'Idea from', 'Ideation for', 'Content type', 'Ideation Topic', 'Content details',
+    'Reference content Link', 'Status', 'Backlog or problem', 'Approval status', '',
+  ]
+
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="page-title">Ideation Center</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Submit and track content ideas</p>
+          <p className="text-slate-500 text-sm mt-0.5">Plan and track content ideas — the team ideation sheet</p>
         </div>
         <button onClick={openCreate} className="btn-primary shrink-0">
-          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Submit Idea</span><span className="sm:hidden">New</span>
+          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">New Ideation</span><span className="sm:hidden">New</span>
         </button>
       </div>
 
-      {/* Status filter pills */}
+      {/* Approval status filter pills */}
       <div className="flex gap-2 flex-wrap">
         {['', 'pending', 'approved', 'rejected'].map(s => (
           <button
@@ -148,7 +191,7 @@ export default function IdeationPage() {
         ))}
       </div>
 
-      {/* Ideas grid */}
+      {/* Ideation sheet */}
       {loading ? (
         <div className="flex items-center justify-center h-40">
           <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
@@ -156,126 +199,168 @@ export default function IdeationPage() {
       ) : ideas.length === 0 ? (
         <div className="card p-12 text-center">
           <Lightbulb className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">No ideas yet</p>
-          <p className="text-slate-400 text-sm mt-1">Submit your first idea to get started</p>
+          <p className="text-slate-500 font-medium">No ideation rows yet</p>
+          <p className="text-slate-400 text-sm mt-1">Add your first ideation to get started</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {ideas.map((idea) => {
-            const statusCfg = STATUS_MAP[idea.status] || STATUS_MAP.pending
-            const StatusIcon = statusCfg.icon
-            const isOwner = idea.submitted_by === user?.id
-            const refs = parseRefs(idea.reference_links)
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm border-collapse min-w-[1100px]">
+            <thead>
+              <tr className="bg-orange-500 text-white">
+                {COLS.map((c, i) => (
+                  <th key={i} className="px-3 py-2.5 text-left font-bold text-xs uppercase tracking-wide border border-orange-400 whitespace-nowrap">
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ideas.map((idea) => {
+                const statusCfg = STATUS_MAP[idea.status] || STATUS_MAP.pending
+                const StatusIcon = statusCfg.icon
+                const refs = parseRefs(idea.reference_links)
+                const allLinks = [...(idea.doc_url ? [idea.doc_url] : []), ...refs]
+                const ws = workStatusCfg(idea.work_status)
+                const manage = canManage(idea)
 
-            return (
-              <div key={idea.id} className="card p-5 flex flex-col gap-3 hover:shadow-card-hover transition-all">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 text-sm leading-snug">{idea.title}</h3>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <div className="w-5 h-5 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700">
-                        {getInitials(idea.submitted_by_name)}
+                return (
+                  <tr key={idea.id} className="hover:bg-slate-50 align-top">
+                    {/* Idea from */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      <div className="flex items-center gap-1.5 min-w-[120px]">
+                        <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
+                          {getInitials(idea.submitted_by_name)}
+                        </div>
+                        <div className="leading-tight">
+                          <p className="font-semibold text-slate-700 text-xs">{idea.submitted_by_name}</p>
+                          <p className="text-[10px] text-slate-400">{formatDate(idea.created_at)}</p>
+                        </div>
                       </div>
-                      <span className="text-xs text-slate-400">{idea.submitted_by_name} · {formatDate(idea.created_at)}</span>
-                    </div>
-                  </div>
-                  <span className={cn('badge shrink-0 flex items-center gap-1', statusCfg.bg, statusCfg.color)}>
-                    <StatusIcon className="w-3 h-3" /> {statusCfg.label}
-                  </span>
-                </div>
+                    </td>
 
-                {idea.description && (
-                  <p className="text-slate-600 text-xs leading-relaxed line-clamp-3">{idea.description}</p>
-                )}
+                    {/* Ideation for */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      {idea.ideation_for
+                        ? <span className="badge bg-brand-50 text-brand-700">{idea.ideation_for}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
 
-                {/* Reviewer info — show for approved/rejected ideas */}
-                {(idea.status === 'approved' || idea.status === 'rejected') && idea.reviewed_by_name && (
-                  <div className={cn(
-                    'rounded-lg p-3 border text-xs',
-                    idea.status === 'approved' ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'
-                  )}>
-                    <p className={cn('font-semibold', idea.status === 'approved' ? 'text-green-700' : 'text-red-700')}>
-                      {idea.status === 'approved' ? '✅ Approved' : '❌ Rejected'} by {idea.reviewed_by_name}
-                    </p>
-                    {idea.reviewed_at && (
-                      <p className="text-slate-400 mt-0.5">{formatDate(idea.reviewed_at)}</p>
-                    )}
-                    {idea.admin_comment && (
-                      <p className="text-slate-600 italic mt-1">"{idea.admin_comment}"</p>
-                    )}
-                  </div>
-                )}
+                    {/* Content type */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      {idea.content_type
+                        ? <span className="badge bg-slate-100 text-slate-700">{idea.content_type}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
 
-                {/* Doc & reference links */}
-                {(idea.doc_url || refs.length > 0) && (
-                  <div className="flex flex-wrap gap-2">
-                    {idea.doc_url && (
-                      <a
-                        href={normalizeUrl(idea.doc_url)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 font-medium bg-brand-50 px-2 py-1 rounded-md"
-                      >
-                        <ExternalLink className="w-3 h-3" /> Open Doc
-                      </a>
-                    )}
-                    {refs.map((ref, i) => (
-                      <a key={i} href={normalizeUrl(ref)} target="_blank" rel="noreferrer"
-                        className="text-xs text-slate-500 hover:text-brand-600 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-md">
-                        <ExternalLink className="w-3 h-3" /> Ref {i + 1}
-                      </a>
-                    ))}
-                  </div>
-                )}
+                    {/* Ideation Topic */}
+                    <td className="px-3 py-3 border border-slate-200 max-w-[240px]">
+                      <p className="font-semibold text-slate-800 text-xs leading-snug whitespace-pre-wrap">{idea.title}</p>
+                    </td>
 
-                {/* Card actions */}
-                <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-auto">
-                  {isOwner ? (
-                    <>
-                      <button
-                        onClick={() => openEdit(idea)}
-                        className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-brand-50 text-slate-500 hover:text-brand-600 transition-colors text-xs font-medium"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(idea.id)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setViewIdea(idea)}
-                      className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors text-xs font-medium"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> View
-                    </button>
-                  )}
+                    {/* Content details */}
+                    <td className="px-3 py-3 border border-slate-200 max-w-[260px]">
+                      {idea.description
+                        ? <p className="text-slate-600 text-xs leading-relaxed line-clamp-4 whitespace-pre-wrap">{idea.description}</p>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
 
-                  {/* Admin delete for non-owner ideas */}
-                  {isAdmin && !isOwner && (
-                    <button
-                      onClick={() => handleDelete(idea.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                    {/* Reference content Link */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      {allLinks.length > 0 ? (
+                        <div className="flex flex-col gap-1 min-w-[100px]">
+                          {allLinks.map((l, i) => (
+                            <a key={i} href={normalizeUrl(l)} target="_blank" rel="noreferrer"
+                              className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 truncate max-w-[160px]">
+                              <ExternalLink className="w-3 h-3 shrink-0" /> Link {i + 1}
+                            </a>
+                          ))}
+                        </div>
+                      ) : <span className="text-slate-300">—</span>}
+                    </td>
 
-                  {isAdmin && idea.status === 'pending' && (
-                    <button
-                      onClick={() => { setReviewModal(idea); setReviewStatus('approved'); setReviewComment('') }}
-                      className="ml-auto text-xs font-semibold text-brand-600 hover:text-brand-700"
-                    >
-                      Review →
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                    {/* Status (work status) — inline editable */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      {manage ? (
+                        <select
+                          value={idea.work_status || 'not_started'}
+                          onChange={e => handleWorkStatus(idea, e.target.value)}
+                          className={cn('text-xs font-semibold rounded-full px-2.5 py-1 border-0 cursor-pointer focus:ring-2 focus:ring-brand-300', ws.color)}
+                        >
+                          {WORK_STATUS.map(w => (
+                            <option key={w.value} value={w.value} className="bg-white text-slate-700">{w.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className={cn('badge', ws.color)}>{ws.label}</span>
+                      )}
+                    </td>
+
+                    {/* Backlog or problem */}
+                    <td className="px-3 py-3 border border-slate-200 max-w-[200px]">
+                      {idea.backlog
+                        ? <p className="text-slate-600 text-xs leading-relaxed line-clamp-3 whitespace-pre-wrap">{idea.backlog}</p>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+
+                    {/* Approval status */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      <div className="flex flex-col gap-1 min-w-[110px]">
+                        <span className={cn('badge flex items-center gap-1 w-fit', statusCfg.bg, statusCfg.color)}>
+                          <StatusIcon className="w-3 h-3" /> {statusCfg.label}
+                        </span>
+                        {idea.reviewed_by_name && (
+                          <span className="text-[10px] text-slate-400">by {idea.reviewed_by_name}</span>
+                        )}
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              setReviewModal(idea)
+                              setReviewStatus(idea.status === 'rejected' ? 'rejected' : 'approved')
+                              setReviewComment(idea.admin_comment || '')
+                            }}
+                            className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 w-fit"
+                          >
+                            {idea.status === 'pending' ? 'Review →' : 'Re-review'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-3 py-3 border border-slate-200">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setViewIdea(idea)}
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                          title="View"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        {manage && (
+                          <>
+                            <button
+                              onClick={() => openEdit(idea)}
+                              className="p-1.5 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-600 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(idea.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -284,19 +369,19 @@ export default function IdeationPage() {
         const statusCfg = STATUS_MAP[viewIdea.status] || STATUS_MAP.pending
         const StatusIcon = statusCfg.icon
         const refs = parseRefs(viewIdea.reference_links)
+        const ws = workStatusCfg(viewIdea.work_status)
         return (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-modal w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
               <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <h2 className="text-lg font-bold text-slate-900 leading-snug">{viewIdea.title}</h2>
-                  <div className="flex items-center gap-2 mt-1.5">
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                     <span className={cn('badge flex items-center gap-1', statusCfg.bg, statusCfg.color)}>
                       <StatusIcon className="w-3 h-3" /> {statusCfg.label}
                     </span>
+                    <span className={cn('badge', ws.color)}>{ws.label}</span>
                     <span className="text-xs text-slate-400">by {viewIdea.submitted_by_name}</span>
-                    <span className="text-xs text-slate-300">·</span>
-                    <span className="text-xs text-slate-400">{formatDate(viewIdea.created_at)}</span>
                   </div>
                 </div>
                 <button onClick={() => setViewIdea(null)} className="text-slate-400 hover:text-slate-600 p-1 shrink-0">
@@ -305,10 +390,28 @@ export default function IdeationPage() {
               </div>
 
               <div className="px-6 py-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Ideation for</p>
+                    <p className="text-sm text-slate-700">{viewIdea.ideation_for || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Content type</p>
+                    <p className="text-sm text-slate-700">{viewIdea.content_type || '—'}</p>
+                  </div>
+                </div>
+
                 {viewIdea.description && (
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Description</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Content details</p>
                     <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{viewIdea.description}</p>
+                  </div>
+                )}
+
+                {viewIdea.backlog && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Backlog or problem</p>
+                    <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{viewIdea.backlog}</p>
                   </div>
                 )}
 
@@ -341,7 +444,7 @@ export default function IdeationPage() {
 
                 {(viewIdea.doc_url || refs.length > 0) && (
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Links</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Reference content links</p>
                     <div className="flex flex-wrap gap-2">
                       {viewIdea.doc_url && (
                         <a
@@ -377,38 +480,67 @@ export default function IdeationPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-modal w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">{editIdea ? 'Edit Idea' : 'Submit New Idea'}</h2>
+              <h2 className="text-lg font-bold text-slate-900">{editIdea ? 'Edit Ideation' : 'New Ideation'}</h2>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <div>
-                <label className="label">Title *</label>
+                <label className="label">Ideation Topic *</label>
                 <input className="input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="What's the idea?" />
               </div>
-              <div>
-                <label className="label">Description</label>
-                <textarea className="input resize-none" rows={4} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe your idea in detail..." />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Ideation for</label>
+                  <input className="input" value={form.ideation_for} onChange={e => setForm(f => ({ ...f, ideation_for: e.target.value }))} placeholder="e.g. Nebs-Dev" />
+                </div>
+                <div>
+                  <label className="label">Content type</label>
+                  <select className="input" value={form.content_type} onChange={e => setForm(f => ({ ...f, content_type: e.target.value }))}>
+                    <option value="">Select type</option>
+                    {CONTENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
               </div>
+
+              <div>
+                <label className="label">Content details</label>
+                <textarea className="input resize-none" rows={4} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the content in detail..." />
+              </div>
+
+              <div>
+                <label className="label">Status</label>
+                <select className="input" value={form.work_status} onChange={e => setForm(f => ({ ...f, work_status: e.target.value }))}>
+                  {WORK_STATUS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Backlog or problem (if any)</label>
+                <textarea className="input resize-none" rows={2} value={form.backlog} onChange={e => setForm(f => ({ ...f, backlog: e.target.value }))} placeholder="Any blocker or problem..." />
+              </div>
+
               <div>
                 <label className="label">Doc / Google Drive URL</label>
                 <input className="input" value={form.doc_url} onChange={e => setForm(f => ({ ...f, doc_url: e.target.value }))} placeholder="https://docs.google.com/..." />
-                <p className="text-xs text-slate-400 mt-1">Paste a Google Docs, Drive, or any document link</p>
               </div>
+
+              <div>
+                <label className="label">Reference content links (one per line)</label>
+                <textarea className="input resize-none text-xs font-mono" rows={3} value={form.reference_links} onChange={e => setForm(f => ({ ...f, reference_links: e.target.value }))} placeholder={"https://facebook.com/...\nhttps://instagram.com/..."} />
+              </div>
+
               <div>
                 <label className="label">Image URL</label>
                 <input className="input" value={form.image_url} onChange={e => setForm(f => ({ ...f, image_url: e.target.value }))} placeholder="https://..." />
-              </div>
-              <div>
-                <label className="label">Reference Links (one per line)</label>
-                <textarea className="input resize-none text-xs font-mono" rows={3} value={form.reference_links} onChange={e => setForm(f => ({ ...f, reference_links: e.target.value }))} placeholder={"https://example.com\nhttps://another.com"} />
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
               <button onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary">
-                {saving ? 'Saving...' : editIdea ? 'Update' : 'Submit Idea'}
+                {saving ? 'Saving...' : editIdea ? 'Update' : 'Add Ideation'}
               </button>
             </div>
           </div>
@@ -421,7 +553,7 @@ export default function IdeationPage() {
           <div className="bg-white rounded-2xl shadow-modal w-full max-w-sm animate-slide-up">
             <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Review Idea</h2>
+                <h2 className="text-lg font-bold text-slate-900">Approval Review</h2>
                 <p className="text-sm text-slate-500 truncate mt-0.5">{reviewModal.title}</p>
               </div>
               <button onClick={() => setReviewModal(null)} className="text-slate-400 hover:text-slate-600 p-1 shrink-0">

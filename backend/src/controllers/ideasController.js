@@ -59,14 +59,19 @@ const getIdea = async (req, res) => {
 // POST /api/ideas
 const createIdea = async (req, res) => {
   try {
-    const { title, description, doc_url, image_url, reference_links } = req.body;
+    const { title, description, doc_url, image_url, reference_links,
+      ideation_for, content_type, work_status, backlog } = req.body;
     if (!title) return res.status(400).json({ success: false, message: 'Title is required' });
 
     const id = uuidv4();
     await pool.query(
-      'INSERT INTO ideas (id, title, description, doc_url, image_url, reference_links, submitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      `INSERT INTO ideas (id, title, description, doc_url, image_url, reference_links,
+         ideation_for, content_type, work_status, backlog, submitted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [id, title, description || null, doc_url || null, image_url || null,
-        reference_links ? JSON.stringify(reference_links) : null, req.user.id]
+        reference_links ? JSON.stringify(reference_links) : null,
+        ideation_for || null, content_type || null, work_status || 'not_started',
+        backlog || null, req.user.id]
     );
 
     const admins = await getAdminUsers(req.user.id);
@@ -85,7 +90,8 @@ const createIdea = async (req, res) => {
 // PUT /api/ideas/:id
 const updateIdea = async (req, res) => {
   try {
-    const { title, description, doc_url, image_url, reference_links } = req.body;
+    const { title, description, doc_url, image_url, reference_links,
+      ideation_for, content_type, work_status, backlog } = req.body;
     const { rows } = await pool.query('SELECT * FROM ideas WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Idea not found' });
 
@@ -95,10 +101,14 @@ const updateIdea = async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE ideas SET title=$1, description=$2, doc_url=$3, image_url=$4, reference_links=$5, updated_at=NOW() WHERE id=$6',
+      `UPDATE ideas SET title=$1, description=$2, doc_url=$3, image_url=$4, reference_links=$5,
+         ideation_for=$6, content_type=$7, work_status=$8, backlog=$9, updated_at=NOW()
+       WHERE id=$10`,
       [title || idea.title, description ?? idea.description, doc_url ?? idea.doc_url,
         image_url ?? idea.image_url,
         reference_links !== undefined ? (reference_links ? JSON.stringify(reference_links) : null) : (idea.reference_links ? JSON.stringify(idea.reference_links) : null),
+        ideation_for ?? idea.ideation_for, content_type ?? idea.content_type,
+        work_status ?? idea.work_status, backlog ?? idea.backlog,
         req.params.id]
     );
     res.json({ success: true, message: 'Idea updated' });

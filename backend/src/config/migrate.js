@@ -104,6 +104,10 @@ const migrations = [
     doc_url VARCHAR(500) DEFAULT NULL,
     image_url VARCHAR(500) DEFAULT NULL,
     reference_links JSONB DEFAULT NULL,
+    ideation_for VARCHAR(255) DEFAULT NULL,
+    content_type VARCHAR(50) DEFAULT NULL,
+    work_status VARCHAR(30) DEFAULT 'not_started',
+    backlog TEXT DEFAULT NULL,
     submitted_by UUID NOT NULL,
     status TEXT CHECK (status IN ('pending','approved','rejected')) DEFAULT 'pending',
     admin_comment TEXT DEFAULT NULL,
@@ -114,6 +118,11 @@ const migrations = [
     FOREIGN KEY (submitted_by) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
   )`,
+
+  `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS ideation_for VARCHAR(255) DEFAULT NULL`,
+  `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS content_type VARCHAR(50) DEFAULT NULL`,
+  `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS work_status VARCHAR(30) DEFAULT 'not_started'`,
+  `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS backlog TEXT DEFAULT NULL`,
 
   `CREATE TABLE IF NOT EXISTS meetings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
