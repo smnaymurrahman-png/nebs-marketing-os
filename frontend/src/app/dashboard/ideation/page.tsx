@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Plus, Lightbulb, ExternalLink, CheckCircle, XCircle, Clock, Trash2, Edit2, Eye, X } from 'lucide-react'
+import { Plus, Lightbulb, ExternalLink, CheckCircle, XCircle, Clock, Trash2, Edit2, Eye, X, ChevronDown } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { cn, formatDate, formatDateTime, getInitials } from '@/lib/utils'
@@ -14,10 +14,10 @@ interface Idea {
   reviewed_by_name?: string; reviewed_at?: string; created_at: string
 }
 
-const STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  pending:  { label: 'Pending',  color: 'text-amber-700',  bg: 'bg-amber-50',  icon: Clock },
-  approved: { label: 'Approved', color: 'text-green-700',  bg: 'bg-green-50',  icon: CheckCircle },
-  rejected: { label: 'Rejected', color: 'text-red-700',    bg: 'bg-red-50',    icon: XCircle },
+const STATUS_MAP: Record<string, { label: string; color: string; bg: string; ring: string; icon: any }> = {
+  pending:  { label: 'Pending',  color: 'text-amber-700',  bg: 'bg-amber-50',  ring: 'ring-amber-200',  icon: Clock },
+  approved: { label: 'Approved', color: 'text-green-700',  bg: 'bg-green-50',  ring: 'ring-green-200',  icon: CheckCircle },
+  rejected: { label: 'Rejected', color: 'text-red-700',    bg: 'bg-red-50',    ring: 'ring-red-200',    icon: XCircle },
 }
 
 const WORK_STATUS = [
@@ -203,164 +203,183 @@ export default function IdeationPage() {
           <p className="text-slate-400 text-sm mt-1">Add your first ideation to get started</p>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm border-collapse min-w-[1100px]">
-            <thead>
-              <tr className="bg-orange-500 text-white">
-                {COLS.map((c, i) => (
-                  <th key={i} className="px-3 py-2.5 text-left font-bold text-xs uppercase tracking-wide border border-orange-400 whitespace-nowrap">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {ideas.map((idea) => {
-                const statusCfg = STATUS_MAP[idea.status] || STATUS_MAP.pending
-                const StatusIcon = statusCfg.icon
-                const refs = parseRefs(idea.reference_links)
-                const allLinks = [...(idea.doc_url ? [idea.doc_url] : []), ...refs]
-                const ws = workStatusCfg(idea.work_status)
-                const manage = canManage(idea)
-
-                return (
-                  <tr key={idea.id} className="hover:bg-slate-50 align-top">
-                    {/* Idea from */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      <div className="flex items-center gap-1.5 min-w-[120px]">
-                        <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">
-                          {getInitials(idea.submitted_by_name)}
-                        </div>
-                        <div className="leading-tight">
-                          <p className="font-semibold text-slate-700 text-xs">{idea.submitted_by_name}</p>
-                          <p className="text-[10px] text-slate-400">{formatDate(idea.created_at)}</p>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Ideation for */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      {idea.ideation_for
-                        ? <span className="badge bg-brand-50 text-brand-700">{idea.ideation_for}</span>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-
-                    {/* Content type */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      {idea.content_type
-                        ? <span className="badge bg-slate-100 text-slate-700">{idea.content_type}</span>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-
-                    {/* Ideation Topic */}
-                    <td className="px-3 py-3 border border-slate-200 max-w-[240px]">
-                      <p className="font-semibold text-slate-800 text-xs leading-snug whitespace-pre-wrap">{idea.title}</p>
-                    </td>
-
-                    {/* Content details */}
-                    <td className="px-3 py-3 border border-slate-200 max-w-[260px]">
-                      {idea.description
-                        ? <p className="text-slate-600 text-xs leading-relaxed line-clamp-4 whitespace-pre-wrap">{idea.description}</p>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-
-                    {/* Reference content Link */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      {allLinks.length > 0 ? (
-                        <div className="flex flex-col gap-1 min-w-[100px]">
-                          {allLinks.map((l, i) => (
-                            <a key={i} href={normalizeUrl(l)} target="_blank" rel="noreferrer"
-                              className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1 truncate max-w-[160px]">
-                              <ExternalLink className="w-3 h-3 shrink-0" /> Link {i + 1}
-                            </a>
-                          ))}
-                        </div>
-                      ) : <span className="text-slate-300">—</span>}
-                    </td>
-
-                    {/* Status (work status) — inline editable */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      {manage ? (
-                        <select
-                          value={idea.work_status || 'not_started'}
-                          onChange={e => handleWorkStatus(idea, e.target.value)}
-                          className={cn('text-xs font-semibold rounded-full px-2.5 py-1 border-0 cursor-pointer focus:ring-2 focus:ring-brand-300', ws.color)}
-                        >
-                          {WORK_STATUS.map(w => (
-                            <option key={w.value} value={w.value} className="bg-white text-slate-700">{w.label}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className={cn('badge', ws.color)}>{ws.label}</span>
+        <div className="card overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse min-w-[1240px]">
+              <thead>
+                <tr className="bg-brand-600">
+                  {COLS.map((c, i) => (
+                    <th
+                      key={i}
+                      className={cn(
+                        'px-4 py-3 text-left font-semibold text-[11px] uppercase tracking-wider text-white/95 whitespace-nowrap',
+                        i < COLS.length - 1 && 'border-r border-white/15'
                       )}
-                    </td>
+                    >
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ideas.map((idea, idx) => {
+                  const statusCfg = STATUS_MAP[idea.status] || STATUS_MAP.pending
+                  const StatusIcon = statusCfg.icon
+                  const refs = parseRefs(idea.reference_links)
+                  const allLinks = [...(idea.doc_url ? [idea.doc_url] : []), ...refs]
+                  const ws = workStatusCfg(idea.work_status)
+                  const manage = canManage(idea)
+                  const dash = <span className="text-slate-300">—</span>
+                  const cell = 'px-4 py-3.5 align-top border-r border-slate-100'
 
-                    {/* Backlog or problem */}
-                    <td className="px-3 py-3 border border-slate-200 max-w-[200px]">
-                      {idea.backlog
-                        ? <p className="text-slate-600 text-xs leading-relaxed line-clamp-3 whitespace-pre-wrap">{idea.backlog}</p>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
+                  return (
+                    <tr
+                      key={idea.id}
+                      className={cn('transition-colors hover:bg-brand-50/60', idx % 2 === 1 && 'bg-slate-50/50')}
+                    >
+                      {/* Idea from */}
+                      <td className={cell}>
+                        <div className="flex items-center gap-2 min-w-[150px]">
+                          <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+                            {getInitials(idea.submitted_by_name)}
+                          </div>
+                          <div className="leading-tight">
+                            <p className="font-semibold text-slate-800 text-xs">{idea.submitted_by_name}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(idea.created_at)}</p>
+                          </div>
+                        </div>
+                      </td>
 
-                    {/* Approval status */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      <div className="flex flex-col gap-1 min-w-[110px]">
-                        <span className={cn('badge flex items-center gap-1 w-fit', statusCfg.bg, statusCfg.color)}>
-                          <StatusIcon className="w-3 h-3" /> {statusCfg.label}
-                        </span>
-                        {idea.reviewed_by_name && (
-                          <span className="text-[10px] text-slate-400">by {idea.reviewed_by_name}</span>
+                      {/* Ideation for */}
+                      <td className={cell}>
+                        {idea.ideation_for
+                          ? <span className="badge bg-brand-50 text-brand-700 ring-1 ring-brand-100">{idea.ideation_for}</span>
+                          : dash}
+                      </td>
+
+                      {/* Content type */}
+                      <td className={cell}>
+                        {idea.content_type
+                          ? <span className="badge bg-slate-100 text-slate-700 ring-1 ring-slate-200">{idea.content_type}</span>
+                          : dash}
+                      </td>
+
+                      {/* Ideation Topic */}
+                      <td className={cn(cell, 'max-w-[240px]')}>
+                        <p className="font-semibold text-slate-800 text-xs leading-snug whitespace-pre-wrap">{idea.title}</p>
+                      </td>
+
+                      {/* Content details */}
+                      <td className={cn(cell, 'max-w-[280px]')}>
+                        {idea.description
+                          ? <p className="text-slate-600 text-xs leading-relaxed line-clamp-4 whitespace-pre-wrap">{idea.description}</p>
+                          : dash}
+                      </td>
+
+                      {/* Reference content Link */}
+                      <td className={cell}>
+                        {allLinks.length > 0 ? (
+                          <div className="flex flex-col gap-1.5 min-w-[110px]">
+                            {allLinks.map((l, i) => (
+                              <a key={i} href={normalizeUrl(l)} target="_blank" rel="noreferrer"
+                                className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline flex items-center gap-1 truncate max-w-[170px]">
+                                <ExternalLink className="w-3 h-3 shrink-0" /> Link {i + 1}
+                              </a>
+                            ))}
+                          </div>
+                        ) : dash}
+                      </td>
+
+                      {/* Status (work status) — inline editable */}
+                      <td className={cell}>
+                        {manage ? (
+                          <div className="relative inline-block">
+                            <select
+                              value={idea.work_status || 'not_started'}
+                              onChange={e => handleWorkStatus(idea, e.target.value)}
+                              className={cn(
+                                'appearance-none text-xs font-semibold rounded-full pl-3 pr-7 py-1.5 border-0 cursor-pointer outline-none focus:ring-2 focus:ring-brand-300/60 transition-all',
+                                ws.color
+                              )}
+                            >
+                              {WORK_STATUS.map(w => (
+                                <option key={w.value} value={w.value} className="bg-white text-slate-700">{w.label}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-70" />
+                          </div>
+                        ) : (
+                          <span className={cn('badge', ws.color)}>{ws.label}</span>
                         )}
-                        {isAdmin && (
+                      </td>
+
+                      {/* Backlog or problem */}
+                      <td className={cn(cell, 'max-w-[220px]')}>
+                        {idea.backlog
+                          ? <p className="text-slate-600 text-xs leading-relaxed line-clamp-3 whitespace-pre-wrap">{idea.backlog}</p>
+                          : dash}
+                      </td>
+
+                      {/* Approval status */}
+                      <td className={cell}>
+                        <div className="flex flex-col gap-1.5 min-w-[120px]">
+                          <span className={cn('badge flex items-center gap-1 w-fit ring-1', statusCfg.bg, statusCfg.color, statusCfg.ring)}>
+                            <StatusIcon className="w-3 h-3" /> {statusCfg.label}
+                          </span>
+                          {idea.reviewed_by_name && (
+                            <span className="text-[10px] text-slate-400">by {idea.reviewed_by_name}</span>
+                          )}
+                          {isAdmin && (
+                            <button
+                              onClick={() => {
+                                setReviewModal(idea)
+                                setReviewStatus(idea.status === 'rejected' ? 'rejected' : 'approved')
+                                setReviewComment(idea.admin_comment || '')
+                              }}
+                              className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 w-fit"
+                            >
+                              {idea.status === 'pending' ? 'Review →' : 'Re-review'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3.5 align-top">
+                        <div className="flex items-center gap-1">
                           <button
-                            onClick={() => {
-                              setReviewModal(idea)
-                              setReviewStatus(idea.status === 'rejected' ? 'rejected' : 'approved')
-                              setReviewComment(idea.admin_comment || '')
-                            }}
-                            className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 w-fit"
+                            onClick={() => setViewIdea(idea)}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                            title="View"
                           >
-                            {idea.status === 'pending' ? 'Review →' : 'Re-review'}
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-3 py-3 border border-slate-200">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setViewIdea(idea)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-                          title="View"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        {manage && (
-                          <>
-                            <button
-                              onClick={() => openEdit(idea)}
-                              className="p-1.5 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-600 transition-colors"
-                              title="Edit"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(idea.id)}
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                          {manage && (
+                            <>
+                              <button
+                                onClick={() => openEdit(idea)}
+                                className="p-1.5 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-600 transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(idea.id)}
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
