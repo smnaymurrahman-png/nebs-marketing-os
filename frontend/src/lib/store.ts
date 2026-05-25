@@ -38,11 +38,18 @@ export const useAuthStore = create<AuthState>()(
 
 // True once Zustand has rehydrated from localStorage. Use to gate auth-dependent
 // redirects so a page refresh doesn't briefly see `isAuthenticated === false`.
+// `.persist` is only available in the browser; on the server we always start
+// as `false` and flip true inside the effect once hydration completes.
 export function useAuthHydrated() {
-  const [hydrated, setHydrated] = useState(useAuthStore.persist.hasHydrated())
+  const [hydrated, setHydrated] = useState(false)
   useEffect(() => {
-    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true))
-    if (useAuthStore.persist.hasHydrated()) setHydrated(true)
+    const p = (useAuthStore as any).persist
+    if (!p) return
+    if (p.hasHydrated()) {
+      setHydrated(true)
+      return
+    }
+    const unsub = p.onFinishHydration(() => setHydrated(true))
     return () => { unsub() }
   }, [])
   return hydrated
