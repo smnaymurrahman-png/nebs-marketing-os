@@ -31,17 +31,17 @@ const getAdsReports = async (req, res) => {
 // POST /api/reports/ads
 const createAdsReport = async (req, res) => {
   try {
-    const { campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes } = req.body;
+    const { campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, link } = req.body;
     if (!campaign_name || !platform || !date_from || !date_to || !rating) {
       return res.status(400).json({ success: false, message: 'Required fields missing' });
     }
 
     const id = uuidv4();
     await pool.query(
-      `INSERT INTO ads_reports (id, campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, submitted_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      `INSERT INTO ads_reports (id, campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, link, submitted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [id, campaign_name, platform, date_from, date_to, total_spend || 0, cpa || 0, ctr || 0,
-        clicks || 0, impressions || 0, rating, notes || null, req.user.id]
+        clicks || 0, impressions || 0, rating, notes || null, link || null, req.user.id]
     );
 
     res.status(201).json({ success: true, message: 'Report submitted', data: { id } });
@@ -62,13 +62,14 @@ const updateAdsReport = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const { campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, admin_comment } = req.body;
+    const { campaign_name, platform, date_from, date_to, total_spend, cpa, ctr, clicks, impressions, rating, notes, admin_comment, link } = req.body;
     await pool.query(
-      `UPDATE ads_reports SET campaign_name=$1, platform=$2, date_from=$3, date_to=$4, total_spend=$5, cpa=$6, ctr=$7, clicks=$8, impressions=$9, rating=$10, notes=$11, admin_comment=$12, updated_at=NOW() WHERE id=$13`,
+      `UPDATE ads_reports SET campaign_name=$1, platform=$2, date_from=$3, date_to=$4, total_spend=$5, cpa=$6, ctr=$7, clicks=$8, impressions=$9, rating=$10, notes=$11, admin_comment=$12, link=$13, updated_at=NOW() WHERE id=$14`,
       [campaign_name ?? r.campaign_name, platform ?? r.platform, date_from ?? r.date_from,
         date_to ?? r.date_to, total_spend ?? r.total_spend, cpa ?? r.cpa, ctr ?? r.ctr,
         clicks ?? r.clicks, impressions ?? r.impressions, rating ?? r.rating, notes ?? r.notes,
         req.user.access_level !== 'user' ? (admin_comment ?? r.admin_comment) : r.admin_comment,
+        link ?? r.link,
         req.params.id]
     );
     res.json({ success: true, message: 'Report updated' });

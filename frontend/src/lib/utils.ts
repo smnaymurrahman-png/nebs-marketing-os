@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { formatDistanceToNow, format, isAfter } from 'date-fns'
+import React from 'react'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -57,4 +58,53 @@ export function fileSize(bytes: number) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+// Render plain text with URLs as clickable links and @mentions highlighted.
+// Splits on URL, bare-domain (www.…), and @Name patterns.
+const RICH_RE =
+  /(https?:\/\/[^\s<>]+|www\.[^\s<>]+|@(?:"[^"]+"|[A-Za-z][\w-]*(?:\s[A-Za-z][\w-]*){0,3}))/g
+
+export function renderRichText(text: string): React.ReactNode[] {
+  if (!text) return []
+  const parts: React.ReactNode[] = []
+  let last = 0
+  let idx = 0
+  text.replace(RICH_RE, (match, _g1, offset: number) => {
+    if (offset > last) parts.push(text.slice(last, offset))
+    if (match.startsWith('@')) {
+      const name = match.startsWith('@"')
+        ? match.slice(2, -1)
+        : match.slice(1)
+      parts.push(
+        React.createElement(
+          'span',
+          {
+            key: `m-${idx++}`,
+            className: 'inline-flex items-center px-1.5 rounded font-semibold text-brand-700 bg-brand-50 ring-1 ring-brand-100',
+          },
+          `@${name}`
+        )
+      )
+    } else {
+      const href = match.startsWith('http') ? match : `https://${match}`
+      parts.push(
+        React.createElement(
+          'a',
+          {
+            key: `l-${idx++}`,
+            href,
+            target: '_blank',
+            rel: 'noreferrer noopener',
+            className: 'text-brand-600 hover:text-brand-700 underline break-all',
+          },
+          match
+        )
+      )
+    }
+    last = offset + match.length
+    return match
+  })
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
 }

@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { BarChart2, Plus, Trash2, Edit2, TrendingUp, Eye, MousePointer, DollarSign } from 'lucide-react'
+import { BarChart2, Plus, Trash2, Edit2, TrendingUp, Eye, MousePointer, DollarSign, ExternalLink } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { cn, formatDate, getInitials } from '@/lib/utils'
@@ -21,8 +21,14 @@ const RATING_CONFIG: Record<string, { color: string; bg: string }> = {
 interface AdsReport {
   id: string; campaign_name: string; platform: string; date_from: string; date_to: string
   total_spend: number; cpa: number; ctr: number; clicks: number; impressions: number
-  rating: string; notes?: string; submitted_by: string; submitted_by_name: string
+  rating: string; notes?: string; link?: string; submitted_by: string; submitted_by_name: string
   admin_comment?: string; created_at: string
+}
+
+function normalizeUrl(url: string) {
+  if (!url) return url
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  return `https://${url}`
 }
 
 interface ContentReport {
@@ -47,7 +53,7 @@ export default function ReportsPage() {
 
   const [adsForm, setAdsForm] = useState({
     campaign_name: '', platform: 'Meta Ads', date_from: '', date_to: '',
-    total_spend: '', cpa: '', ctr: '', clicks: '', impressions: '', rating: 'Good', notes: ''
+    total_spend: '', cpa: '', ctr: '', clicks: '', impressions: '', rating: 'Good', notes: '', link: ''
   })
 
   const [contentForm, setContentForm] = useState({
@@ -72,7 +78,7 @@ export default function ReportsPage() {
 
   const openCreate = () => {
     setEditItem(null)
-    if (tab === 'ads') setAdsForm({ campaign_name: '', platform: 'Meta Ads', date_from: '', date_to: '', total_spend: '', cpa: '', ctr: '', clicks: '', impressions: '', rating: 'Good', notes: '' })
+    if (tab === 'ads') setAdsForm({ campaign_name: '', platform: 'Meta Ads', date_from: '', date_to: '', total_spend: '', cpa: '', ctr: '', clicks: '', impressions: '', rating: 'Good', notes: '', link: '' })
     else setContentForm({ content_name: '', platform: 'Instagram', post_date: '', clicks: '', likes: '', comments: '', shares: '', impressions: '', rating: 'Good', notes: '' })
     setShowModal(true)
   }
@@ -81,7 +87,7 @@ export default function ReportsPage() {
     setEditItem(item)
     if (tab === 'ads') {
       const r = item as AdsReport
-      setAdsForm({ campaign_name: r.campaign_name, platform: r.platform, date_from: r.date_from, date_to: r.date_to, total_spend: String(r.total_spend), cpa: String(r.cpa), ctr: String(r.ctr), clicks: String(r.clicks), impressions: String(r.impressions), rating: r.rating, notes: r.notes || '' })
+      setAdsForm({ campaign_name: r.campaign_name, platform: r.platform, date_from: r.date_from, date_to: r.date_to, total_spend: String(r.total_spend), cpa: String(r.cpa), ctr: String(r.ctr), clicks: String(r.clicks), impressions: String(r.impressions), rating: r.rating, notes: r.notes || '', link: r.link || '' })
     } else {
       const r = item as ContentReport
       setContentForm({ content_name: r.content_name, platform: r.platform, post_date: r.post_date, clicks: String(r.clicks), likes: String(r.likes), comments: String(r.comments), shares: String(r.shares), impressions: String(r.impressions), rating: r.rating, notes: r.notes || '' })
@@ -94,7 +100,15 @@ export default function ReportsPage() {
     try {
       if (tab === 'ads') {
         if (!adsForm.campaign_name || !adsForm.date_from || !adsForm.date_to) { toast.error('Required fields missing'); setSaving(false); return }
-        const payload = { ...adsForm, total_spend: Number(adsForm.total_spend), cpa: Number(adsForm.cpa), ctr: Number(adsForm.ctr), clicks: Number(adsForm.clicks), impressions: Number(adsForm.impressions) }
+        const payload = {
+          ...adsForm,
+          total_spend: Number(adsForm.total_spend),
+          cpa: Number(adsForm.cpa),
+          ctr: Number(adsForm.ctr),
+          clicks: Number(adsForm.clicks),
+          impressions: Number(adsForm.impressions),
+          link: adsForm.link ? normalizeUrl(adsForm.link.trim()) : null,
+        }
         if (editItem) await api.put(`/reports/ads/${editItem.id}`, payload)
         else await api.post('/reports/ads', payload)
       } else {
@@ -121,10 +135,10 @@ export default function ReportsPage() {
     } catch { toast.error('Failed to delete') }
   }
 
-  const numInput = (label: string, key: string, form: any, setForm: any, placeholder = '0') => (
+  const numInput = (label: string, key: string, form: any, setForm: any, placeholder = '0', step = 'any') => (
     <div>
       <label className="label">{label}</label>
-      <input type="number" step="any" className="input" value={form[key]} onChange={(e: any) => setForm((f: any) => ({ ...f, [key]: e.target.value }))} placeholder={placeholder} />
+      <input type="number" step={step} className="input" value={form[key]} onChange={(e: any) => setForm((f: any) => ({ ...f, [key]: e.target.value }))} placeholder={placeholder} />
     </div>
   )
 
@@ -180,9 +194,9 @@ export default function ReportsPage() {
                       <p className="text-xs text-slate-400 mb-3">{formatDate(r.date_from)} – {formatDate(r.date_to)} · by {r.submitted_by_name}</p>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {[
-                          { label: 'Spend', value: `$${Number(r.total_spend).toLocaleString()}`, icon: DollarSign },
-                          { label: 'CPA', value: `$${Number(r.cpa).toFixed(2)}`, icon: TrendingUp },
-                          { label: 'CTR', value: `${Number(r.ctr).toFixed(2)}%`, icon: MousePointer },
+                          { label: 'Spend', value: `$${Number(r.total_spend).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`, icon: DollarSign },
+                          { label: 'CPA',   value: `$${Number(r.cpa).toFixed(3)}`, icon: TrendingUp },
+                          { label: 'CTR',   value: `${Number(r.ctr).toFixed(3)}%`, icon: MousePointer },
                           { label: 'Clicks', value: Number(r.clicks).toLocaleString(), icon: MousePointer },
                           { label: 'Impressions', value: Number(r.impressions).toLocaleString(), icon: Eye },
                         ].map(({ label, value, icon: Icon }) => (
@@ -192,6 +206,16 @@ export default function ReportsPage() {
                           </div>
                         ))}
                       </div>
+                      {r.link && (
+                        <a
+                          href={normalizeUrl(r.link)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Open campaign / dashboard
+                        </a>
+                      )}
                       {r.notes && <p className="text-xs text-slate-500 mt-2 italic">{r.notes}</p>}
                       {r.admin_comment && <p className="text-xs text-brand-600 mt-1 font-medium">Admin: {r.admin_comment}</p>}
                     </div>
@@ -307,12 +331,22 @@ export default function ReportsPage() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    {numInput('Total Spend ($)', 'total_spend', adsForm, setAdsForm, '0.00')}
-                    {numInput('CPA ($)', 'cpa', adsForm, setAdsForm, '0.00')}
-                    {numInput('CTR (%)', 'ctr', adsForm, setAdsForm, '0.00')}
-                    {numInput('Clicks', 'clicks', adsForm, setAdsForm, '0')}
+                    {numInput('Total Spend ($)', 'total_spend', adsForm, setAdsForm, '0.000', '0.001')}
+                    {numInput('CPA ($)', 'cpa', adsForm, setAdsForm, '0.000', '0.001')}
+                    {numInput('CTR (%)', 'ctr', adsForm, setAdsForm, '0.000', '0.001')}
+                    {numInput('Clicks', 'clicks', adsForm, setAdsForm, '0', '1')}
                   </div>
-                  {numInput('Impressions', 'impressions', adsForm, setAdsForm, '0')}
+                  {numInput('Impressions', 'impressions', adsForm, setAdsForm, '0', '1')}
+                  <div>
+                    <label className="label">Campaign / Dashboard Link</label>
+                    <input
+                      className="input"
+                      value={adsForm.link}
+                      onChange={e => setAdsForm((f: any) => ({ ...f, link: e.target.value }))}
+                      placeholder="https://business.facebook.com/adsmanager/..."
+                      type="url"
+                    />
+                  </div>
                   <div>
                     <label className="label">Notes</label>
                     <textarea className="input resize-none" rows={3} value={adsForm.notes} onChange={e => setAdsForm((f: any) => ({ ...f, notes: e.target.value }))} placeholder="Any notes about this campaign..." />

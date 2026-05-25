@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { cn, STATUS_CONFIG, PRIORITY_CONFIG, formatDate, formatDateTime, fileSize, deadlineColor, getInitials } from '@/lib/utils'
+import { cn, STATUS_CONFIG, PRIORITY_CONFIG, formatDate, formatDateTime, fileSize, deadlineColor, getInitials, renderRichText } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 interface Task {
@@ -41,6 +41,45 @@ export default function TaskDetailPage() {
   // Comment
   const [comment, setComment] = useState('')
   const [commentLoading, setCommentLoading] = useState(false)
+  const commentInputRef = useRef<HTMLInputElement>(null)
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+
+  const mentionMatches = useMemo(() => {
+    if (!mention) return []
+    const q = mention.query.toLowerCase()
+    return members
+      .filter(m => m.full_name.toLowerCase().includes(q))
+      .slice(0, 6)
+  }, [mention, members])
+
+  const onCommentChange = (value: string) => {
+    setComment(value)
+    const cursor = commentInputRef.current?.selectionStart ?? value.length
+    const before = value.slice(0, cursor)
+    const m = before.match(/(?:^|\s)@([A-Za-z][\w-]*(?:\s[A-Za-z][\w-]*){0,3})?$/)
+    if (m) {
+      setMention({ query: m[1] || '', start: m.index! + (m[0].startsWith('@') ? 0 : 1) })
+      setMentionIndex(0)
+    } else {
+      setMention(null)
+    }
+  }
+
+  const insertMention = (name: string) => {
+    if (!mention) return
+    const cursor = commentInputRef.current?.selectionStart ?? comment.length
+    const needsQuotes = /\s/.test(name)
+    const token = needsQuotes ? `@"${name}" ` : `@${name} `
+    const next = comment.slice(0, mention.start) + token + comment.slice(cursor)
+    setComment(next)
+    setMention(null)
+    requestAnimationFrame(() => {
+      const pos = mention.start + token.length
+      commentInputRef.current?.focus()
+      commentInputRef.current?.setSelectionRange(pos, pos)
+    })
+  }
 
   // Status
   const [statusChanging, setStatusChanging] = useState(false)
@@ -60,6 +99,10 @@ export default function TaskDetailPage() {
   const [newCheckAssignee, setNewCheckAssignee] = useState('')
   const [newCheckDeadline, setNewCheckDeadline] = useState('')
   const [addingCheck, setAddingCheck] = useState(false)
+
+  // Checklist edit
+  const [editingCheckId, setEditingCheckId] = useState<string | null>(null)
+  const [editCheckForm, setEditCheckForm] = useState({ item_name: '', assigned_to: '', deadline: '' })
 
   // Edit modal
   const [editModal, setEditModal] = useState(false)
@@ -134,6 +177,28 @@ export default function TaskDetailPage() {
       fetchTask()
     } catch { toast.error('Failed to add item') }
     setAddingCheck(false)
+  }
+
+  const startEditCheck = (item: any) => {
+    setEditingCheckId(item.id)
+    setEditCheckForm({
+      item_name: item.item_name || '',
+      assigned_to: item.assigned_to || '',
+      deadline: item.deadline ? item.deadline.slice(0, 10) : '',
+    })
+  }
+
+  const saveEditCheck = async (checkId: string) => {
+    if (!editCheckForm.item_name.trim()) { toast.error('Item name required'); return }
+    try {
+      await api.put(`/tasks/${id}/checklist/${checkId}`, {
+        item_name: editCheckForm.item_name.trim(),
+        assigned_to: editCheckForm.assigned_to || null,
+        deadline: editCheckForm.deadline || null,
+      })
+      setEditingCheckId(null)
+      fetchTask()
+    } catch { toast.error('Failed to update item') }
   }
 
   const handleStatusChange = async (newStatus: string) => {
@@ -265,7 +330,9 @@ export default function TaskDetailPage() {
           {task.description && (
             <div className="card p-5">
               <h2 className="section-title mb-3">Description</h2>
-              <p className="text-slate-600 text-sm whitespace-pre-wrap leading-relaxed">{task.description}</p>
+              <p className="text-slate-600 text-sm whitespace-pre-wrap leading-relaxed break-words">
+                {renderRichText(task.description)}
+              </p>
             </div>
           )}
 
@@ -273,8 +340,8 @@ export default function TaskDetailPage() {
           {task.content_box && (
             <div className="card p-5">
               <h2 className="section-title mb-3">Content Brief</h2>
-              <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-mono">
-                {task.content_box}
+              <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-mono break-words">
+                {renderRichText(task.content_box)}
               </div>
             </div>
           )}
@@ -298,41 +365,91 @@ export default function TaskDetailPage() {
                 {task.checklist.length === 0 && (
                   <p className="text-slate-400 text-sm text-center py-2">No checklist items yet.</p>
                 )}
-                {task.checklist.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 py-1.5">
-                    <button
-                      onClick={() => handleToggleChecklist(item.id, item.is_completed)}
-                      className={cn(
-                        'w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0',
-                        item.is_completed ? 'border-brand-500 bg-brand-500' : 'border-slate-300 hover:border-brand-400'
+                {task.checklist.map((item) => {
+                  const isEditing = editingCheckId === item.id
+                  return (
+                    <div key={item.id} className="group flex items-start gap-3 py-1.5">
+                      <button
+                        onClick={() => handleToggleChecklist(item.id, item.is_completed)}
+                        className={cn(
+                          'w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0 mt-0.5',
+                          item.is_completed ? 'border-brand-500 bg-brand-500' : 'border-slate-300 hover:border-brand-400'
+                        )}
+                      >
+                        {item.is_completed && <CheckCircle className="w-3.5 h-3.5 text-white fill-white" />}
+                      </button>
+
+                      {isEditing ? (
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <input
+                            className="input text-sm"
+                            value={editCheckForm.item_name}
+                            onChange={e => setEditCheckForm(f => ({ ...f, item_name: e.target.value }))}
+                            placeholder="Item name"
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveEditCheck(item.id) } }}
+                          />
+                          <div className="flex gap-2">
+                            <select
+                              className="input text-sm flex-1"
+                              value={editCheckForm.assigned_to}
+                              onChange={e => setEditCheckForm(f => ({ ...f, assigned_to: e.target.value }))}
+                            >
+                              <option value="">Unassigned</option>
+                              {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                            </select>
+                            <input
+                              type="date"
+                              className="input text-sm"
+                              style={{ width: '10rem' }}
+                              value={editCheckForm.deadline}
+                              onChange={e => setEditCheckForm(f => ({ ...f, deadline: e.target.value }))}
+                            />
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setEditingCheckId(null)} className="btn-secondary text-xs py-1 px-3">Cancel</button>
+                            <button onClick={() => saveEditCheck(item.id)} className="btn-primary text-xs py-1 px-3">Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex-1 min-w-0">
+                            <p className={cn('text-sm', item.is_completed ? 'line-through text-slate-400' : 'text-slate-800')}>
+                              {item.item_name}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              {item.assigned_to_name && (
+                                <p className="text-xs text-slate-400">→ {item.assigned_to_name}</p>
+                              )}
+                              {item.deadline && (
+                                <span className={cn(
+                                  'text-xs font-medium flex items-center gap-1',
+                                  item.is_completed ? 'text-slate-300' : deadlineColor(item.deadline, 'ongoing')
+                                )}>
+                                  <Clock className="w-3 h-3" />
+                                  {formatDate(item.deadline)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {item.is_completed && item.completed_at && (
+                              <span className="text-xs text-slate-300">{formatDate(item.completed_at)}</span>
+                            )}
+                            {isAdmin && (
+                              <button
+                                onClick={() => startEditCheck(item)}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-all"
+                                title="Edit item"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </>
                       )}
-                    >
-                      {item.is_completed && <CheckCircle className="w-3.5 h-3.5 text-white fill-white" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className={cn('text-sm', item.is_completed ? 'line-through text-slate-400' : 'text-slate-800')}>
-                        {item.item_name}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {item.assigned_to_name && (
-                          <p className="text-xs text-slate-400">→ {item.assigned_to_name}</p>
-                        )}
-                        {item.deadline && (
-                          <span className={cn(
-                            'text-xs font-medium flex items-center gap-1',
-                            item.is_completed ? 'text-slate-300' : deadlineColor(item.deadline, 'ongoing')
-                          )}>
-                            <Clock className="w-3 h-3" />
-                            {formatDate(item.deadline)}
-                          </span>
-                        )}
-                      </div>
                     </div>
-                    {item.is_completed && item.completed_at && (
-                      <span className="text-xs text-slate-300 shrink-0">{formatDate(item.completed_at)}</span>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               {isAdmin && (
                 <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
@@ -475,7 +592,9 @@ export default function TaskDetailPage() {
                       <span className="text-sm font-semibold text-slate-900">{c.user_name}</span>
                       <span className="text-xs text-slate-400">{formatDateTime(c.created_at)}</span>
                     </div>
-                    <p className="text-sm text-slate-600 mt-0.5 leading-relaxed">{c.comment_text}</p>
+                    <p className="text-sm text-slate-600 mt-0.5 leading-relaxed whitespace-pre-wrap break-words">
+                      {renderRichText(c.comment_text)}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -487,11 +606,54 @@ export default function TaskDetailPage() {
               <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0 mt-1">
                 {user ? getInitials(user.full_name) : '?'}
               </div>
-              <div className="flex-1 flex gap-2">
-                <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write a comment..." className="input flex-1" />
+              <div className="flex-1 flex gap-2 relative">
+                <input
+                  ref={commentInputRef}
+                  value={comment}
+                  onChange={(e) => onCommentChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (mention && mentionMatches.length > 0) {
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return }
+                      if (e.key === 'ArrowUp')   { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return }
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault()
+                        insertMention(mentionMatches[mentionIndex].full_name)
+                        return
+                      }
+                      if (e.key === 'Escape') { setMention(null); return }
+                    }
+                  }}
+                  placeholder="Write a comment... type @ to mention"
+                  className="input flex-1"
+                />
                 <button type="submit" disabled={commentLoading || !comment.trim()} className="btn-primary px-3">
                   <Send className="w-4 h-4" />
                 </button>
+
+                {mention && mentionMatches.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-1 w-64 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-30 max-h-56 overflow-y-auto">
+                    {mentionMatches.map((m, i) => (
+                      <button
+                        type="button"
+                        key={m.id}
+                        onMouseEnter={() => setMentionIndex(i)}
+                        onClick={() => insertMention(m.full_name)}
+                        className={cn(
+                          'w-full text-left px-3 py-2 text-sm flex items-center gap-2.5',
+                          i === mentionIndex ? 'bg-brand-50' : 'hover:bg-slate-50'
+                        )}
+                      >
+                        <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center text-xs font-bold text-brand-700 shrink-0">
+                          {getInitials(m.full_name)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-800 truncate">{m.full_name}</p>
+                          <p className="text-xs text-slate-400 truncate">{m.department}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </form>
           </div>

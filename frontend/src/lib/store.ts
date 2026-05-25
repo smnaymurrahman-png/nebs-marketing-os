@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useEffect, useState } from 'react'
 
 interface User {
   id: string
@@ -34,3 +35,15 @@ export const useAuthStore = create<AuthState>()(
     { name: 'nebs-auth' }
   )
 )
+
+// True once Zustand has rehydrated from localStorage. Use to gate auth-dependent
+// redirects so a page refresh doesn't briefly see `isAuthenticated === false`.
+export function useAuthHydrated() {
+  const [hydrated, setHydrated] = useState(useAuthStore.persist.hasHydrated())
+  useEffect(() => {
+    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true))
+    if (useAuthStore.persist.hasHydrated()) setHydrated(true)
+    return () => { unsub() }
+  }, [])
+  return hydrated
+}

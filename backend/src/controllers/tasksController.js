@@ -263,6 +263,37 @@ const addComment = async (req, res) => {
     if (!comment_text) return res.status(400).json({ success: false, message: 'Comment text required' });
     const id = uuidv4();
     await pool.query('INSERT INTO task_comments (id, task_id, user_id, comment_text) VALUES ($1, $2, $3, $4)', [id, req.params.id, req.user.id, comment_text]);
+
+    // Parse @mentions — match @"Full Name" or @Name (up to 4 words)
+    const mentionNames = new Set();
+    const re = /@(?:"([^"]+)"|([A-Za-z][\w-]*(?:\s[A-Za-z][\w-]*){0,3}))/g;
+    let m;
+    while ((m = re.exec(comment_text)) !== null) {
+      mentionNames.add((m[1] || m[2]).trim());
+    }
+
+    if (mentionNames.size > 0) {
+      const { rows: taskRows } = await pool.query('SELECT title FROM tasks WHERE id = $1', [req.params.id]);
+      const taskTitle = taskRows[0]?.title || 'a task';
+      const names = Array.from(mentionNames);
+      const { rows: users } = await pool.query(
+        `SELECT id, full_name, work_email FROM users WHERE is_active = TRUE AND id != $1 AND LOWER(full_name) = ANY($2::text[])`,
+        [req.user.id, names.map(n => n.toLowerCase())]
+      );
+      for (const u of users) {
+        await createNotification({
+          userId: u.id,
+          title: 'You were mentioned',
+          message: `${req.user.full_name} mentioned you on "${taskTitle}": ${comment_text.slice(0, 140)}`,
+          type: 'task',
+          referenceId: req.params.id,
+        });
+        if (emailTemplates.commentMention) {
+          await sendEmail(u.work_email, emailTemplates.commentMention(u.full_name, req.user.full_name, taskTitle, comment_text, req.params.id));
+        }
+      }
+    }
+
     res.status(201).json({ success: true, message: 'Comment added', data: { id } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
@@ -272,13 +303,37 @@ const addComment = async (req, res) => {
 // PUT /api/tasks/:id/checklist/:checkId
 const updateChecklist = async (req, res) => {
   try {
-    const { is_completed } = req.body;
+    const { is_completed, item_name, assigned_to, deadline } = req.body;
+    const { rows } = await pool.query(
+      'SELECT * FROM task_checklist WHERE id = $1 AND task_id = $2',
+      [req.params.checkId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Checklist item not found' });
+    const cur = rows[0];
+
+    const nextCompleted = is_completed !== undefined ? is_completed : cur.is_completed;
+    const completedAt = is_completed === true ? new Date()
+                      : is_completed === false ? null
+                      : cur.completed_at;
+
     await pool.query(
-      'UPDATE task_checklist SET is_completed = $1, completed_at = $2 WHERE id = $3 AND task_id = $4',
-      [is_completed, is_completed ? new Date() : null, req.params.checkId, req.params.id]
+      `UPDATE task_checklist
+       SET is_completed = $1, completed_at = $2,
+           item_name = $3, assigned_to = $4, deadline = $5
+       WHERE id = $6 AND task_id = $7`,
+      [
+        nextCompleted,
+        completedAt,
+        item_name !== undefined ? (item_name.trim() || cur.item_name) : cur.item_name,
+        assigned_to !== undefined ? (assigned_to || null) : cur.assigned_to,
+        deadline !== undefined ? (deadline || null) : cur.deadline,
+        req.params.checkId,
+        req.params.id,
+      ]
     );
     res.json({ success: true, message: 'Checklist updated' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };

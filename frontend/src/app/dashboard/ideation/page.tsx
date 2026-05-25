@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { Plus, Lightbulb, ExternalLink, CheckCircle, XCircle, Clock, Trash2, Edit2, Eye, X, ChevronDown } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
+import { Plus, Lightbulb, ExternalLink, CheckCircle, XCircle, Clock, Trash2, Edit2, Eye, X, ChevronDown, Upload, ImageIcon } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { cn, formatDate, formatDateTime, getInitials } from '@/lib/utils'
@@ -29,6 +29,15 @@ const WORK_STATUS = [
 const workStatusCfg = (v?: string) => WORK_STATUS.find(w => w.value === v) || WORK_STATUS[0]
 
 const CONTENT_TYPES = ['Static', 'Video', 'Reels', 'Carousel', 'Story', 'Blog', 'Ad', 'Other']
+const VENTURES = ['Nebs-Dev', 'Nebs-IT', 'Nebs-Creative', 'Nebs-Connect']
+
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '')
+const resolveImageUrl = (url?: string) => {
+  if (!url) return ''
+  if (url.startsWith('http')) return url
+  if (url.startsWith('/')) return `${API_ORIGIN}${url}`
+  return url
+}
 
 function normalizeUrl(url: string) {
   if (!url) return url
@@ -64,8 +73,26 @@ export default function IdeationPage() {
   const [reviewStatus, setReviewStatus] = useState<'approved' | 'rejected'>('approved')
   const [reviewComment, setReviewComment] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState(emptyForm)
+
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) { toast.error('Only image files allowed'); return }
+    if (file.size > 10 * 1024 * 1024) { toast.error('Image must be under 10MB'); return }
+    setUploadingImage(true)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      const res = await api.post('/ideas/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setForm(f => ({ ...f, image_url: res.data.data.url }))
+      toast.success('Image uploaded')
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Image upload failed')
+    }
+    setUploadingImage(false)
+  }
 
   const fetchIdeas = async () => {
     setLoading(true)
@@ -457,7 +484,7 @@ export default function IdeationPage() {
                 {viewIdea.image_url && (
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Image</p>
-                    <img src={viewIdea.image_url} alt="idea" className="rounded-lg max-h-48 object-cover w-full" onError={e => (e.currentTarget.style.display = 'none')} />
+                    <img src={resolveImageUrl(viewIdea.image_url)} alt="idea" className="rounded-lg max-h-48 object-cover w-full" onError={e => (e.currentTarget.style.display = 'none')} />
                   </div>
                 )}
 
@@ -512,8 +539,15 @@ export default function IdeationPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Ideation for</label>
-                  <input className="input" value={form.ideation_for} onChange={e => setForm(f => ({ ...f, ideation_for: e.target.value }))} placeholder="e.g. Nebs-Dev" />
+                  <label className="label">Ideation for (venture)</label>
+                  <select
+                    className="input"
+                    value={form.ideation_for}
+                    onChange={e => setForm(f => ({ ...f, ideation_for: e.target.value }))}
+                  >
+                    <option value="">Select venture</option>
+                    {VENTURES.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="label">Content type</label>
@@ -552,8 +586,61 @@ export default function IdeationPage() {
               </div>
 
               <div>
-                <label className="label">Image URL</label>
-                <input className="input" value={form.image_url} onChange={e => setForm(f => ({ ...f, image_url: e.target.value }))} placeholder="https://..." />
+                <label className="label">Image</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) handleImageUpload(f)
+                    e.currentTarget.value = ''
+                  }}
+                />
+                {form.image_url ? (
+                  <div className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <img
+                      src={resolveImageUrl(form.image_url)}
+                      alt="ideation"
+                      className="w-24 h-24 rounded-md object-cover shrink-0"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="btn-secondary text-xs py-1.5"
+                      >
+                        <Upload className="w-3.5 h-3.5" /> Replace
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, image_url: '' }))}
+                        className="text-xs text-red-600 hover:text-red-700 font-semibold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    className="w-full flex flex-col items-center justify-center gap-2 py-6 border-2 border-dashed border-slate-200 rounded-lg text-slate-400 hover:border-brand-400 hover:text-brand-600 transition-colors"
+                  >
+                    {uploadingImage ? (
+                      <div className="w-5 h-5 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-6 h-6" />
+                    )}
+                    <span className="text-xs font-medium">
+                      {uploadingImage ? 'Uploading...' : 'Click to upload image (max 10MB)'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">

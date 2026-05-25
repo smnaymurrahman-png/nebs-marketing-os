@@ -252,6 +252,10 @@ async function runMigrationsAndSeed() {
     `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS content_type VARCHAR(50) DEFAULT NULL`,
     `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS work_status VARCHAR(30) DEFAULT 'not_started'`,
     `ALTER TABLE ideas ADD COLUMN IF NOT EXISTS backlog TEXT DEFAULT NULL`,
+    `ALTER TABLE ads_reports ADD COLUMN IF NOT EXISTS link VARCHAR(500) DEFAULT NULL`,
+    `ALTER TABLE ads_reports ALTER COLUMN total_spend TYPE DECIMAL(14,3)`,
+    `ALTER TABLE ads_reports ALTER COLUMN cpa TYPE DECIMAL(14,3)`,
+    `ALTER TABLE ads_reports ALTER COLUMN ctr TYPE DECIMAL(8,3)`,
     `CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL,

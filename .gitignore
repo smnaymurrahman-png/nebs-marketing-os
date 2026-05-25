@@ -16,6 +16,7 @@ frontend/out/
 # Build outputs
 dist/
 build/
+*.tsbuildinfo
 
 # Uploads (user files)
 backend/uploads/

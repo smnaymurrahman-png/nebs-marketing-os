@@ -346,6 +346,25 @@ const emailTemplates = {
       </div>
     `
   }),
+
+  commentMention: (userName, mentionerName, taskTitle, commentText, taskId) => ({
+    subject: `${mentionerName} mentioned you on: ${taskTitle}`,
+    html: `
+      <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; padding: 32px;">
+        <div style="background: #1A56DB; border-radius: 12px 12px 0 0; padding: 24px; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">Nebs Marketing OS</h1>
+        </div>
+        <div style="background: white; border-radius: 0 0 12px 12px; padding: 32px;">
+          <h2 style="color: #1e293b;">Hi ${userName},</h2>
+          <p style="color: #475569;"><strong>${mentionerName}</strong> mentioned you in a comment on <strong>${taskTitle}</strong>:</p>
+          <div style="background: #EFF6FF; border-left: 4px solid #1A56DB; padding: 16px; border-radius: 4px; margin: 20px 0; white-space: pre-wrap; color: #1e293b;">
+            ${(commentText || '').replace(/</g, '&lt;')}
+          </div>
+          <a href="${process.env.FRONTEND_URL}/dashboard/tasks/${taskId}" style="display: inline-block; background: #1A56DB; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 16px;">View Comment</a>
+        </div>
+      </div>
+    `
+  }),
 };
 
 module.exports = { sendEmail, sendBulkEmail, verifyEmailConfig, emailTemplates };
