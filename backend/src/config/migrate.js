@@ -215,6 +215,35 @@ const migrations = [
     used BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS content_calendar (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entry_date DATE NOT NULL,
+    venture VARCHAR(50) NOT NULL,
+    content_type VARCHAR(30) DEFAULT NULL,
+    topic TEXT DEFAULT NULL,
+    created_by UUID DEFAULT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE (entry_date, venture)
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS ads_calendar (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entry_date DATE NOT NULL,
+    venture VARCHAR(50) NOT NULL,
+    slot SMALLINT NOT NULL,
+    content_type VARCHAR(30) DEFAULT NULL,
+    topic TEXT DEFAULT NULL,
+    budget DECIMAL(12,2) DEFAULT NULL,
+    ads_type VARCHAR(40) DEFAULT NULL,
+    created_by UUID DEFAULT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE (entry_date, venture, slot)
   )`
 ];
 

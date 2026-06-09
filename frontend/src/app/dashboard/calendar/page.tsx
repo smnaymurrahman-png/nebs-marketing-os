@@ -6,6 +6,16 @@ import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { cn, STATUS_CONFIG, PRIORITY_CONFIG } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import ContentCalendarSheet from '@/components/calendar/ContentCalendarSheet'
+import AdsCalendarSheet from '@/components/calendar/AdsCalendarSheet'
+
+const TABS = [
+  { id: 'month', label: 'Month view' },
+  { id: 'content', label: 'Content' },
+  { id: 'ads:Nebs-IT', label: 'Nebs-IT Ads' },
+  { id: 'ads:Nebs-Dev', label: 'Nebs-Dev Ads' },
+  { id: 'ads:Nebs-creative', label: 'Nebs-creative Ads' },
+] as const
 
 interface CalEvent { id: string; title: string; event_date: string; event_time?: string; color?: string; source: string }
 interface TaskEvent { id: string; title: string; event_date: string; status: string; priority: string; source: string; ventures?: string[]; platforms?: string[] }
@@ -22,6 +32,8 @@ export default function CalendarPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [addForm, setAddForm] = useState({ title: '', event_date: '', event_time: '', color: '#1A56DB' })
   const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState<string>('month')
+  const canEdit = !!user // all logged-in users can edit the team calendars
 
   const monthKey = format(currentMonth, 'yyyy-MM')
 
@@ -78,15 +90,37 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Calendar</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Team schedule, deadlines and meetings</p>
+          <p className="text-slate-500 text-sm mt-0.5">Schedule, content & ads planning calendars</p>
         </div>
-        {isAdmin && (
+        {tab === 'month' && isAdmin && (
           <button onClick={() => setShowAddModal(true)} className="btn-primary">
             <Plus className="w-4 h-4" /> Add Event
           </button>
         )}
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2 flex-wrap border-b border-slate-100 pb-px">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              'px-3.5 py-2 text-sm font-semibold rounded-t-lg border-b-2 -mb-px transition-colors',
+              tab === t.id
+                ? 'border-brand-600 text-brand-700'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'content' && <ContentCalendarSheet canEdit={canEdit} />}
+      {tab.startsWith('ads:') && <AdsCalendarSheet key={tab} venture={tab.slice(4)} canEdit={canEdit} />}
+
+      {tab === 'month' && (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
         {/* Calendar grid */}
         <div className="lg:col-span-3 card p-5">
@@ -243,6 +277,7 @@ export default function CalendarPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Add Event Modal */}
       {showAddModal && (
