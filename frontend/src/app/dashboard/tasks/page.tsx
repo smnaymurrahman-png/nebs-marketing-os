@@ -12,7 +12,9 @@ interface Task {
   comment_count: number; checklist_total: number; checklist_done: number
 }
 
-const ALL_STATUSES = ['new', 'todo', 'ongoing', 'in_review', 'in_revision', 'approved', 'posted']
+// 'posted' (completed) tasks live on the dedicated Completed page, so they are
+// excluded here to keep the active task list manageable.
+const ALL_STATUSES = ['new', 'todo', 'ongoing', 'in_review', 'in_revision', 'approved']
 
 export default function TasksPage() {
   const { user } = useAuthStore()
@@ -28,6 +30,7 @@ export default function TasksPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams()
+      params.set('completed', 'false') // hide completed (posted) tasks here
       if (search) params.set('search', search)
       if (statusFilter) params.set('status', statusFilter)
       if (priorityFilter) params.set('priority', priorityFilter)

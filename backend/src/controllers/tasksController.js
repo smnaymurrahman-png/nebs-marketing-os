@@ -6,7 +6,7 @@ const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
 // GET /api/tasks
 const getTasks = async (req, res) => {
   try {
-    const { status, priority, search } = req.query;
+    const { status, priority, search, completed } = req.query;
     const user = req.user;
     let p = 0;
     const params = [];
@@ -30,6 +30,10 @@ const getTasks = async (req, res) => {
     }
 
     if (status) { query += ` AND t.status = $${++p}`; params.push(status); }
+    // 'completed' tasks are those in the final 'posted' status. The main Tasks
+    // page passes completed=false to hide them; the Completed page passes true.
+    if (completed === 'true') { query += ` AND t.status = 'posted'`; }
+    else if (completed === 'false') { query += ` AND t.status <> 'posted'`; }
     if (priority) { query += ` AND t.priority = $${++p}`; params.push(priority); }
     if (search) {
       const p1 = ++p, p2 = ++p;
@@ -256,6 +260,20 @@ const deleteTask = async (req, res) => {
   }
 };
 
+// POST /api/tasks/bulk-delete  { ids: [uuid, ...] }
+// Admin-only bulk delete (children cascade via FK). Used by the Completed page.
+const bulkDeleteTasks = async (req, res) => {
+  try {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).filter(id => UUID_RE.test(id));
+    if (!ids.length) return res.status(400).json({ success: false, message: 'No valid task ids provided' });
+    const { rowCount } = await pool.query('DELETE FROM tasks WHERE id = ANY($1::uuid[])', [ids]);
+    res.json({ success: true, message: `Deleted ${rowCount} task${rowCount !== 1 ? 's' : ''}`, deleted: rowCount });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 // POST /api/tasks/:id/comments
 const addComment = async (req, res) => {
   try {
@@ -379,4 +397,4 @@ const getTaskStats = async (req, res) => {
   }
 };
 
-module.exports = { getTasks, getMyTasks, getTask, createTask, updateTask, deleteTask, addComment, updateChecklist, getTaskStats };
+module.exports = { getTasks, getMyTasks, getTask, createTask, updateTask, deleteTask, bulkDeleteTasks, addComment, updateChecklist, getTaskStats };

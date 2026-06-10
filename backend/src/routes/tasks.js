@@ -4,7 +4,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
 const {
-  getTasks, getMyTasks, getTask, createTask, updateTask, deleteTask,
+  getTasks, getMyTasks, getTask, createTask, updateTask, deleteTask, bulkDeleteTasks,
   addComment, updateChecklist, getTaskStats
 } = require('../controllers/tasksController');
 const { authenticate, requireAdmin } = require('../middleware/auth');
@@ -38,6 +38,7 @@ const upload = multer({
 router.get('/stats', authenticate, getTaskStats);
 router.get('/my-tasks', authenticate, getMyTasks);
 router.get('/', authenticate, getTasks);
+router.post('/bulk-delete', authenticate, requireAdmin, bulkDeleteTasks);
 router.get('/:id', authenticate, getTask);
 router.post('/', authenticate, createTask);
 router.put('/:id', authenticate, updateTask);
