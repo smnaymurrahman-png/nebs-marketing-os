@@ -231,15 +231,18 @@ export default function IdeationPage() {
         </div>
       ) : (
         <div className="card overflow-hidden p-0">
-          <div className="overflow-x-auto">
+          {/* Bounded height so the table scrolls vertically inside this box —
+              keeps the horizontal scrollbar pinned at the bottom of the viewport
+              instead of at the very end of all the rows. */}
+          <div className="overflow-auto max-h-[calc(100vh-220px)]">
             <table className="w-full text-sm border-collapse min-w-[1240px]">
               <thead>
-                <tr className="bg-brand-600">
+                <tr>
                   {COLS.map((c, i) => (
                     <th
                       key={i}
                       className={cn(
-                        'px-4 py-3 text-left font-semibold text-[11px] uppercase tracking-wider text-white/95 whitespace-nowrap',
+                        'sticky top-0 z-10 bg-brand-600 px-4 py-3 text-left font-semibold text-[11px] uppercase tracking-wider text-white/95 whitespace-nowrap',
                         i < COLS.length - 1 && 'border-r border-white/15'
                       )}
                     >
