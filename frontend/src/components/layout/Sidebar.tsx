@@ -12,7 +12,7 @@ import toast from 'react-hot-toast'
 const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['super_admin', 'admin', 'user'] },
   { href: '/dashboard/tasks', icon: CheckSquare, label: 'Tasks', roles: ['super_admin', 'admin', 'user'] },
-  { href: '/dashboard/completed', icon: CheckCircle2, label: 'Completed', roles: ['super_admin', 'admin', 'user'] },
+  { href: '/dashboard/completed', icon: CheckCircle2, label: 'Completed Task', roles: ['super_admin', 'admin', 'user'] },
   { href: '/dashboard/my-tasks', icon: ListTodo, label: 'My Tasks', roles: ['user', 'admin', 'super_admin'] },
   { href: '/dashboard/calendar', icon: Calendar, label: 'Calendar', roles: ['super_admin', 'admin', 'user'] },
   { href: '/dashboard/ideation', icon: Lightbulb, label: 'Ideation', roles: ['super_admin', 'admin', 'user'] },
