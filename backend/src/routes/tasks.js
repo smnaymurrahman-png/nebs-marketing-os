@@ -10,6 +10,7 @@ const {
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { createNotification, getAdminUsers } = require('../utils/notifications');
 const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
+const { tg } = require('../utils/telegram');
 
 // Absolute upload path — consistent with index.js regardless of CWD
 const UPLOAD_DIR = process.env.UPLOAD_DIR
@@ -65,6 +66,7 @@ router.post('/:id/files', authenticate, upload.single('file'), async (req, res) 
       await createNotification({ userId: admin.id, title: 'File Submitted for Review', message: `${req.user.full_name} uploaded "${req.file.originalname}" on "${taskTitle}"`, type: 'task', referenceId: req.params.id });
     }
     await sendBulkEmail(admins, (adminName) => emailTemplates.taskSubmitted(adminName, req.user.full_name, taskTitle, req.file.originalname, req.params.id));
+    tg.fileSubmitted(taskTitle, req.user.full_name, req.file.originalname, req.params.id);
 
     res.status(201).json({ success: true, data: { id: fileId, file_url: fileUrl } });
   } catch (error) {
@@ -92,6 +94,7 @@ router.post('/:id/links', authenticate, async (req, res) => {
       await createNotification({ userId: admin.id, title: 'Link Submitted for Review', message: `${req.user.full_name} submitted "${fileName}" on "${taskTitle}"`, type: 'task', referenceId: req.params.id });
     }
     await sendBulkEmail(admins, (adminName) => emailTemplates.taskSubmitted(adminName, req.user.full_name, taskTitle, fileName, req.params.id));
+    tg.linkSubmitted(taskTitle, req.user.full_name, fileName, req.params.id);
 
     res.status(201).json({ success: true, data: { id: fileId } });
   } catch (error) {
@@ -181,6 +184,7 @@ router.put('/:taskId/files/:fileId/review', authenticate, requireAdmin, async (r
       const statusLabel = review_status === 'accepted' ? 'Approved' : 'Needs Revision';
       await createNotification({ userId: uploaded_by, title: `File ${statusLabel}`, message: `"${file_name}" on "${taskTitle}" was ${review_status === 'accepted' ? 'approved' : 'sent for revision'}${review_comment ? ': ' + review_comment : ''}`, type: 'task', referenceId: req.params.taskId });
       await sendEmail(uploader_email, emailTemplates.fileReviewed(uploader_name, taskTitle, file_name, review_status, review_comment, req.params.taskId));
+      tg.fileReviewed(taskTitle, file_name, review_status, review_comment, req.params.taskId);
     }
 
     res.json({ success: true, message: `File ${review_status}` });

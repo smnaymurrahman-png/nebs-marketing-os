@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/database');
 const { createNotification, getAdminUsers } = require('../utils/notifications');
 const { sendEmail, sendBulkEmail, emailTemplates } = require('../utils/email');
+const { tg } = require('../utils/telegram');
 
 // GET /api/tasks
 const getTasks = async (req, res) => {
@@ -192,6 +193,7 @@ const createTask = async (req, res) => {
       await createNotification({ userId: admin.id, title: 'New Task Created', message: `${req.user.full_name} created: "${title}"`, type: 'task', referenceId: taskId });
     }
     await sendBulkEmail(admins, (adminName) => emailTemplates.taskCreated(adminName, req.user.full_name, title, priority, deadline, taskId));
+    tg.taskCreated(title, req.user.full_name, priority || 'medium', taskId);
 
     res.status(201).json({ success: true, message: 'Task created successfully', data: { id: taskId } });
   } catch (error) {
@@ -240,6 +242,7 @@ const updateTask = async (req, res) => {
         await createNotification({ userId: u.id, title: 'Task Status Updated', message: `"${taskTitle}" is now ${newLabel}`, type: 'task', referenceId: id });
         await sendEmail(u.work_email, emailTemplates.taskStatusChanged(u.full_name, taskTitle, oldLabel, newLabel, id));
       }
+      tg.taskStatusChanged(taskTitle, t.status, status, req.user.full_name, id);
     }
 
     res.json({ success: true, message: 'Task updated successfully' });
