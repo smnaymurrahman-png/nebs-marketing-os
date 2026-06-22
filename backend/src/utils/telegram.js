@@ -1,6 +1,6 @@
 const https = require('https');
 
-const BASE_URL = process.env.FRONTEND_URL || 'https://nebs-marketing-os.vercel.app';
+const BASE_URL = 'https://nebs-marketing-os.vercel.app';
 
 function telegramRequest(token, body) {
   return new Promise((resolve, reject) => {
