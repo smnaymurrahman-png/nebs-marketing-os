@@ -34,7 +34,12 @@ async function sendTelegramNotification(text, taskId) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
-  if (!token || !chatId) return; // silently skip if not configured
+  console.log('[Telegram] token set:', !!token, '| chatId:', chatId);
+
+  if (!token || !chatId) {
+    console.warn('[Telegram] Missing env vars — skipping');
+    return;
+  }
 
   const body = {
     chat_id: chatId,
@@ -51,9 +56,10 @@ async function sendTelegramNotification(text, taskId) {
   }
 
   try {
-    await telegramRequest(token, body);
+    const result = await telegramRequest(token, body);
+    console.log('[Telegram] Response:', result);
   } catch (err) {
-    console.warn('⚠️  Telegram notification failed:', err.message);
+    console.warn('[Telegram] Request failed:', err.message);
   }
 }
 
