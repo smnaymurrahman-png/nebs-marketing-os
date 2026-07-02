@@ -1,11 +1,17 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Railway internal hostname doesn't use SSL; external proxy does
+const isRailwayInternal = process.env.DATABASE_URL?.includes('railway.internal');
+const sslConfig = process.env.NODE_ENV === 'production' && !isRailwayInternal
+  ? { rejectUnauthorized: false }
+  : undefined;
+
 const pool = new Pool(
   process.env.DATABASE_URL
     ? {
         connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+        ssl: sslConfig,
       }
     : {
         host: process.env.DB_HOST || 'localhost',
@@ -22,7 +28,7 @@ async function testConnection() {
     console.log('✅ PostgreSQL connected successfully');
     client.release();
   } catch (error) {
-    console.error('❌ PostgreSQL connection failed:', error.message);
+    console.error('❌ PostgreSQL connection failed:', error.message || error);
     process.exit(1);
   }
 }
