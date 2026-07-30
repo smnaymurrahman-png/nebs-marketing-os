@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, Calendar, CheckCircle, MessageSquare, Link2,
   Plus, X, CheckCheck, XCircle, Clock, Send, Trash2, ChevronDown,
-  Building2, Share2, ExternalLink, Pencil, UserPlus
+  Building2, Share2, ExternalLink, Pencil, UserPlus, Copy
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -311,16 +311,25 @@ export default function TaskDetailPage() {
             </p>
           </div>
         </div>
-        {isAdmin && (
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={openEdit} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors" title="Edit task">
-              <Pencil className="w-4 h-4" />
-            </button>
-            <button onClick={handleDelete} className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Delete task">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => router.push(`/dashboard/tasks/new?duplicate=${task.id}`)}
+            className="p-2 rounded-lg hover:bg-brand-50 text-slate-400 hover:text-brand-600 transition-colors"
+            title="Duplicate task"
+          >
+            <Copy className="w-4 h-4" />
+          </button>
+          {isAdmin && (
+            <>
+              <button onClick={openEdit} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition-colors" title="Edit task">
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button onClick={handleDelete} className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Delete task">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

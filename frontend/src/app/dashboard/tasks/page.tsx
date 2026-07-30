@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Filter, Calendar, User, ChevronRight } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Search, Filter, Calendar, User, ChevronRight, Copy } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { cn, STATUS_CONFIG, PRIORITY_CONFIG, formatDate, deadlineColor, getInitials } from '@/lib/utils'
@@ -17,6 +18,7 @@ interface Task {
 const ALL_STATUSES = ['new', 'todo', 'ongoing', 'in_review', 'in_revision', 'approved']
 
 export default function TasksPage() {
+  const router = useRouter()
   const { user } = useAuthStore()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
@@ -164,6 +166,21 @@ export default function TasksPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Duplicate — opens the New Task form prefilled from this task */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    router.push(`/dashboard/tasks/new?duplicate=${task.id}`)
+                  }}
+                  className="p-1.5 rounded-lg text-slate-300 hover:bg-brand-50 hover:text-brand-600 shrink-0 transition-colors"
+                  title={`Duplicate "${task.title}"`}
+                  aria-label={`Duplicate ${task.title}`}
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
 
                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 shrink-0 transition-colors" />
               </Link>

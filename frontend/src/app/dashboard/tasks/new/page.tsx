@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, X, CheckSquare, Building2, Share2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, X, CheckSquare, Building2, Share2, ChevronDown, ChevronRight, Copy } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { cn, getInitials } from '@/lib/utils'
@@ -29,10 +29,17 @@ const STANDALONE_PLATFORMS = ['LinkedIn', 'Twitter', 'YouTube', 'TikTok', 'Dribb
 
 export default function NewTaskPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user } = useAuthStore()
+
+  // `?duplicate=<taskId>` prefills this form from an existing task so a
+  // recurring task (same assignees + same sub-tasks) only needs its details changed.
+  const duplicateId = searchParams.get('duplicate')
 
   const [members, setMembers] = useState<Member[]>([])
   const [saving, setSaving] = useState(false)
+  const [prefilling, setPrefilling] = useState(!!duplicateId)
+  const [copiedFrom, setCopiedFrom] = useState('')
 
   const [form, setForm] = useState({
     title: '', description: '', priority: 'medium', deadline: '', content_box: ''
@@ -50,6 +57,41 @@ export default function NewTaskPage() {
   useEffect(() => {
     api.get('/users').then(res => setMembers(res.data.data)).catch(() => {})
   }, [])
+
+  // Copy everything reusable from the source task. Deadlines are deliberately
+  // left blank — they are always specific to the original run, and a stale
+  // deadline would make the new task overdue the moment it's created.
+  useEffect(() => {
+    if (!duplicateId) return
+    let cancelled = false
+    // Re-assert on a hard load: this page prerenders statically, so search
+    // params are only readable once the client hydrates.
+    setPrefilling(true)
+    api.get(`/tasks/${duplicateId}`)
+      .then(res => {
+        if (cancelled) return
+        const t = res.data.data
+        setCopiedFrom(t.title)
+        setForm({
+          title: `${t.title} (Copy)`,
+          description: t.description || '',
+          priority: t.priority || 'medium',
+          deadline: '',
+          content_box: t.content_box || '',
+        })
+        setAssigneeIds((t.assignees || []).map((a: any) => a.id))
+        setSelectedVentures(Array.isArray(t.ventures) ? t.ventures : [])
+        setSelectedPlatforms(Array.isArray(t.platforms) ? t.platforms : [])
+        setChecklist((t.checklist || []).map((c: any) => ({
+          item_name: c.item_name,
+          assigned_to: c.assigned_to || '',
+          deadline: '',
+        })))
+      })
+      .catch(() => { if (!cancelled) toast.error('Could not load the task to duplicate') })
+      .finally(() => { if (!cancelled) setPrefilling(false) })
+    return () => { cancelled = true }
+  }, [duplicateId])
 
   const toggleVenture = (v: string) =>
     setSelectedVentures(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
@@ -107,6 +149,12 @@ export default function NewTaskPage() {
     setSaving(false)
   }
 
+  if (prefilling) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
   return (
     <div className="max-w-3xl space-y-5 animate-fade-in">
       {/* Header */}
@@ -115,10 +163,24 @@ export default function NewTaskPage() {
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div>
-          <h1 className="page-title">New Task</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Fill in the details to create a new task</p>
+          <h1 className="page-title">{duplicateId ? 'Duplicate Task' : 'New Task'}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {duplicateId
+              ? 'Assignees and sub-tasks were copied over — just update the details'
+              : 'Fill in the details to create a new task'}
+          </p>
         </div>
       </div>
+
+      {copiedFrom && (
+        <div className="card p-4 flex items-start gap-3 border-brand-200 bg-brand-50">
+          <Copy className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-brand-800">
+            Copied from <span className="font-semibold">{copiedFrom}</span>. Deadlines were left
+            blank on purpose — set new ones below. Files and comments are not copied.
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Basic Info */}
