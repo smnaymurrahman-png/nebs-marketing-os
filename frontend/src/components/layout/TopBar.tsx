@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bell, X, CheckCheck, Menu } from 'lucide-react'
 import { useAuthStore } from '@/lib/store'
 import { timeAgo, cn } from '@/lib/utils'
@@ -11,8 +12,20 @@ interface Notification {
   title: string
   message: string
   type: string
+  reference_id: string | null
   is_read: boolean
   created_at: string
+}
+
+// Where a notification takes you when clicked. `null` = nothing to open.
+const notifHref = (n: Notification): string | null => {
+  switch (n.type) {
+    case 'task':    return n.reference_id ? `/dashboard/tasks/${n.reference_id}` : null
+    case 'idea':    return '/dashboard/ideation'
+    case 'meeting': return '/dashboard/meetings'
+    case 'report':  return '/dashboard/reports'
+    default:        return null
+  }
 }
 
 type Filter = 'all' | 'unread' | 'read'
@@ -23,6 +36,7 @@ interface TopBarProps {
 
 export default function TopBar({ onMenuClick }: TopBarProps) {
   const { user } = useAuthStore()
+  const router = useRouter()
   const [showNotifs, setShowNotifs] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unread, setUnread] = useState(0)
@@ -67,6 +81,14 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
     try { await api.put(`/notifications/${id}/read`) } catch {}
   }
 
+  const openNotification = (notif: Notification) => {
+    if (!notif.is_read) markOneRead(notif.id)
+    const href = notifHref(notif)
+    if (!href) return
+    setShowNotifs(false)
+    router.push(href)
+  }
+
   const typeIcon: Record<string, string> = {
     task: '✅', meeting: '📅', idea: '💡', report: '📊', system: '🔔'
   }
@@ -77,7 +99,10 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
     return notifications
   }, [notifications, filter])
 
-  const readCount = notifications.length - unread
+  // Pill counts describe the loaded page only (backend caps the list at 50),
+  // whereas `unread` is the global count — mixing the two goes negative.
+  const loadedUnread = notifications.filter(n => !n.is_read).length
+  const readCount = notifications.length - loadedUnread
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
@@ -137,7 +162,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
               <div className="flex gap-1.5 px-4 py-2 border-b border-slate-100 bg-slate-50/60">
                 {([
                   { key: 'all',    label: 'All',    count: notifications.length, on: 'bg-slate-800 text-white',   off: 'bg-white text-slate-600 ring-1 ring-slate-200' },
-                  { key: 'unread', label: 'Unread', count: unread,                on: 'bg-red-500 text-white',     off: 'bg-white text-red-600 ring-1 ring-red-200' },
+                  { key: 'unread', label: 'Unread', count: loadedUnread,          on: 'bg-red-500 text-white',     off: 'bg-white text-red-600 ring-1 ring-red-200' },
                   { key: 'read',   label: 'Read',   count: readCount,             on: 'bg-green-600 text-white',   off: 'bg-white text-green-700 ring-1 ring-green-200' },
                 ] as const).map(p => (
                   <button
@@ -171,9 +196,10 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
                   filtered.map((notif) => (
                     <button
                       key={notif.id}
-                      onClick={() => !notif.is_read && markOneRead(notif.id)}
+                      onClick={() => openNotification(notif)}
                       className={cn(
                         'w-full text-left px-4 py-3 transition-colors border-l-4',
+                        notifHref(notif) ? 'cursor-pointer' : 'cursor-default',
                         notif.is_read
                           ? 'border-green-500 bg-green-50/40 hover:bg-green-50'
                           : 'border-red-500 bg-red-50/40 hover:bg-red-50'
