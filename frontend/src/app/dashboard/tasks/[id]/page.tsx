@@ -91,7 +91,10 @@ export default function TaskDetailPage() {
   const [submittingLink, setSubmittingLink] = useState(false)
 
   // Review modal
-  const [reviewModal, setReviewModal] = useState<{ fileId: string; fileName: string } | null>(null)
+  const [reviewModal, setReviewModal] = useState<{ fileId: string; fileName: string; current: string } | null>(null)
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
+  const [editLinkName, setEditLinkName] = useState('')
+  const [savingLinkName, setSavingLinkName] = useState(false)
   const [reviewComment, setReviewComment] = useState('')
 
   // Checklist add
@@ -211,16 +214,44 @@ export default function TaskDetailPage() {
     setStatusChanging(false)
   }
 
+  // Admins can open this on an already-decided link to revise the call.
+  const openReview = (file: any) => {
+    setReviewModal({ fileId: file.id, fileName: file.file_name, current: file.review_status })
+    setReviewComment(file.review_comment || '')
+  }
+
+  const closeReview = () => { setReviewModal(null); setReviewComment('') }
+
   const handleReview = async (status: 'accepted' | 'rejected') => {
     if (!reviewModal) return
     try {
       await api.put(`/tasks/${id}/files/${reviewModal.fileId}/review`, {
         review_status: status, review_comment: reviewComment || null
       })
-      toast.success(`File ${status}`)
-      setReviewModal(null); setReviewComment('')
+      toast.success(`Link ${status}`)
+      closeReview()
       fetchTask()
     } catch { toast.error('Review failed') }
+  }
+
+  const startEditLink = (file: any) => {
+    setEditingLinkId(file.id)
+    setEditLinkName(file.file_name || '')
+  }
+
+  const saveLinkName = async (fileId: string) => {
+    const name = editLinkName.trim()
+    if (!name) { toast.error('Name is required'); return }
+    setSavingLinkName(true)
+    try {
+      await api.put(`/tasks/${id}/files/${fileId}`, { file_name: name })
+      setEditingLinkId(null)
+      toast.success('Link renamed')
+      fetchTask()
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to rename link')
+    }
+    setSavingLinkName(false)
   }
 
   const handleDelete = async () => {
@@ -550,34 +581,68 @@ export default function TaskDetailPage() {
                     : `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}${file.file_url}`
                   return (
                     <div key={file.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                      <div className="flex-1 min-w-0">
-                        <a href={href} target="_blank" rel="noreferrer"
-                          className="text-sm font-medium text-brand-600 hover:underline truncate flex items-center gap-1.5">
-                          <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                          {file.file_name}
-                        </a>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {file.file_type === 'link' ? 'Shared link' : fileSize(file.file_size)} · by {file.uploaded_by_name} · {formatDate(file.uploaded_at)}
-                        </p>
-                        {file.review_comment && (
-                          <p className="text-xs text-slate-500 mt-1 italic">"{file.review_comment}"</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={cn('badge text-xs', {
-                          'bg-amber-50 text-amber-700': file.review_status === 'pending',
-                          'bg-green-50 text-green-700': file.review_status === 'accepted',
-                          'bg-red-50 text-red-700': file.review_status === 'rejected',
-                        })}>
-                          {file.review_status}
-                        </span>
-                        {isAdmin && file.review_status === 'pending' && (
-                          <button onClick={() => setReviewModal({ fileId: file.id, fileName: file.file_name })}
-                            className="text-xs text-brand-600 hover:text-brand-700 font-semibold">
-                            Review
-                          </button>
-                        )}
-                      </div>
+                      {editingLinkId === file.id ? (
+                        <div className="flex-1 min-w-0">
+                          <div className="flex gap-2">
+                            <input
+                              className="input text-sm flex-1"
+                              value={editLinkName}
+                              onChange={e => setEditLinkName(e.target.value)}
+                              placeholder="Link name"
+                              autoFocus
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') { e.preventDefault(); saveLinkName(file.id) }
+                                if (e.key === 'Escape') setEditingLinkId(null)
+                              }}
+                            />
+                            <button onClick={() => saveLinkName(file.id)} disabled={savingLinkName || !editLinkName.trim()}
+                              className="btn-primary text-xs px-3">
+                              {savingLinkName ? 'Saving...' : 'Save'}
+                            </button>
+                            <button onClick={() => setEditingLinkId(null)} className="btn-secondary p-2">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-1.5 truncate">
+                            URL can't be changed · {file.file_url}
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex-1 min-w-0">
+                            <a href={href} target="_blank" rel="noreferrer"
+                              className="text-sm font-medium text-brand-600 hover:underline truncate flex items-center gap-1.5">
+                              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                              {file.file_name}
+                            </a>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {file.file_type === 'link' ? 'Shared link' : fileSize(file.file_size)} · by {file.uploaded_by_name} · {formatDate(file.uploaded_at)}
+                            </p>
+                            {file.review_comment && (
+                              <p className="text-xs text-slate-500 mt-1 italic">"{file.review_comment}"</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={cn('badge text-xs', {
+                              'bg-amber-50 text-amber-700': file.review_status === 'pending',
+                              'bg-green-50 text-green-700': file.review_status === 'accepted',
+                              'bg-red-50 text-red-700': file.review_status === 'rejected',
+                            })}>
+                              {file.review_status}
+                            </span>
+                            <button onClick={() => startEditLink(file)} title="Rename link"
+                              className="text-slate-400 hover:text-slate-600 p-1">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            {isAdmin && (
+                              <button onClick={() => openReview(file)}
+                                className="text-xs text-brand-600 hover:text-brand-700 font-semibold">
+                                {file.review_status === 'pending' ? 'Review' : 'Change'}
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )
                 })}
@@ -961,8 +1026,19 @@ export default function TaskDetailPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-modal w-full max-w-sm animate-slide-up">
             <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">Review Link</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                {reviewModal.current === 'pending' ? 'Review Link' : 'Change Review'}
+              </h2>
               <p className="text-sm text-slate-500 truncate">{reviewModal.fileName}</p>
+              {reviewModal.current !== 'pending' && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Currently{' '}
+                  <span className={cn('font-semibold', reviewModal.current === 'accepted' ? 'text-green-600' : 'text-red-600')}>
+                    {reviewModal.current}
+                  </span>
+                  {' '}— pick a new decision below.
+                </p>
+              )}
             </div>
             <div className="px-6 py-5">
               <label className="label">Comment (optional)</label>
@@ -970,7 +1046,7 @@ export default function TaskDetailPage() {
                 placeholder="Feedback for the submitter..." rows={3} className="input resize-none" />
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setReviewModal(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={closeReview} className="btn-secondary flex-1">Cancel</button>
               <button onClick={() => handleReview('rejected')} className="btn-danger flex-1">
                 <XCircle className="w-4 h-4" /> Reject
               </button>

@@ -193,4 +193,24 @@ router.put('/:taskId/files/:fileId/review', authenticate, requireAdmin, async (r
   }
 });
 
+// Rename a link/file — any authenticated user. Only file_name is writable;
+// file_url is deliberately never read from the body so a submission can't be
+// re-pointed at a different target after review.
+router.put('/:taskId/files/:fileId', authenticate, async (req, res) => {
+  try {
+    const name = req.body.file_name?.trim();
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+
+    const { rowCount } = await pool.query(
+      'UPDATE task_files SET file_name = $1 WHERE id = $2 AND task_id = $3',
+      [name, req.params.fileId, req.params.taskId]
+    );
+    if (!rowCount) return res.status(404).json({ success: false, message: 'Link not found' });
+
+    res.json({ success: true, message: 'Link renamed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to rename link' });
+  }
+});
+
 module.exports = router;
